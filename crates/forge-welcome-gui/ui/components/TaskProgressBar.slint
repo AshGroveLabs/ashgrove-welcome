@@ -1,0 +1,36 @@
+export component TaskProgressBar inherits Rectangle {
+    in property <bool> active: false;
+    in property <int> percent: 0;
+    in property <string> title: "Tasks (0%)";
+    in property <string> detail: "Idle";
+
+    visible: true;
+    width: 222px;
+    height: 58px;
+    border-radius: 12px;
+    background: root.active ? #20170fcc : #181818cc;
+    border-width: 1px;
+    border-color: root.active ? #ff7a18 : #333333;
+
+    Text {
+        x: 12px;
+        y: 8px;
+        width: parent.width - 24px;
+        text: root.title;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 800;
+        overflow: elide;
+    }
+
+    Text {
+        x: 12px;
+        y: 31px;
+        width: parent.width - 24px;
+        text: root.detail;
+        color: root.active ? #ffb15f : #9a9a9a;
+        font-size: 11px;
+        font-weight: 500;
+        overflow: elide;
+    }
+}

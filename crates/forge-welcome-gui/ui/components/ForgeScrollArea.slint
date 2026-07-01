@@ -1,0 +1,36 @@
+export component ForgeScrollArea inherits Rectangle {
+    in property <length> content-height: 0px;
+    in property <bool> show-scrollbar: root.content-height > root.height;
+
+    background: transparent;
+    clip: true;
+
+    viewport := Flickable {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        viewport-width: parent.width;
+        viewport-height: root.content-height;
+
+        @children
+    }
+
+    if root.show-scrollbar: Rectangle {
+        x: parent.width - 8px;
+        y: 6px;
+        width: 4px;
+        height: parent.height - 12px;
+        border-radius: 2px;
+        background: #2a2a2a;
+
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height / 3;
+            border-radius: 2px;
+            background: #ff7a18;
+        }
+    }
+}

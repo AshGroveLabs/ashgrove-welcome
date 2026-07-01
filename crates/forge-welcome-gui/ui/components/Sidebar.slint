@@ -1,0 +1,208 @@
+import { ForgeScrollArea } from "ForgeScrollArea.slint";
+import { TaskProgressBar } from "TaskProgressBar.slint";
+
+component SidebarItem inherits Rectangle {
+    in property <string> title: "Item";
+    in property <string> subtitle: "";
+    in property <bool> active: false;
+    callback clicked;
+
+    height: 46px;
+    border-radius: 10px;
+    background: root.active ? #2a1a10 : transparent;
+    border-width: root.active ? 1px : 0px;
+    border-color: root.active ? #ff7a18 : transparent;
+
+    Text {
+        x: 12px;
+        y: root.subtitle == "" ? 13px : 7px;
+        width: parent.width - 24px;
+        text: root.title;
+        color: root.active ? #ffb15f : #d7d7d7;
+        font-size: 13px;
+        font-weight: root.active ? 800 : 650;
+        overflow: elide;
+    }
+
+    if root.subtitle != "": Text {
+        x: 12px;
+        y: 26px;
+        width: parent.width - 24px;
+        text: root.subtitle;
+        color: #8f8f8f;
+        font-size: 10px;
+        overflow: elide;
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Sidebar inherits Rectangle {
+    in-out property <int> selected-page: 0;
+
+    in property <bool> task-progress-active: false;
+    in property <int> task-progress-percent: 0;
+    in property <string> task-progress-title: "Tasks (0%)";
+    in property <string> task-progress-detail: "Idle";
+
+    callback navigate(int);
+
+    width: 255px;
+    background: #101010;
+    border-width: 0px;
+
+    Rectangle {
+        x: parent.width - 1px;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: #262626;
+    }
+
+    Text {
+        x: 18px;
+        y: 24px;
+        width: parent.width - 36px;
+        text: "AshGrove";
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 900;
+        overflow: elide;
+    }
+
+    Text {
+        x: 18px;
+        y: 52px;
+        width: parent.width - 36px;
+        text: "Welcome";
+        color: #ff7a18;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        overflow: elide;
+    }
+
+    nav-scroll := ForgeScrollArea {
+        x: 14px;
+        y: 86px;
+        width: parent.width - 28px;
+        height: parent.height - 226px;
+        content-height: 372px;
+
+        SidebarItem {
+            x: 0px;
+            y: 0px;
+            width: nav-scroll.width - 10px;
+            title: "Home";
+            subtitle: "Overview";
+            active: root.selected-page == 0;
+
+            clicked => {
+                root.navigate(0);
+            }
+        }
+
+        SidebarItem {
+            x: 0px;
+            y: 52px;
+            width: nav-scroll.width - 10px;
+            title: "Development";
+            subtitle: "Tools and editors";
+            active: root.selected-page == 1;
+
+            clicked => {
+                root.navigate(1);
+            }
+        }
+
+        SidebarItem {
+            x: 0px;
+            y: 104px;
+            width: nav-scroll.width - 10px;
+            title: "Gaming";
+            subtitle: "Game setup";
+            active: root.selected-page == 2;
+
+            clicked => {
+                root.navigate(2);
+            }
+        }
+
+        SidebarItem {
+            x: 0px;
+            y: 156px;
+            width: nav-scroll.width - 10px;
+            title: "Productivity";
+            subtitle: "Work apps";
+            active: root.selected-page == 3;
+
+            clicked => {
+                root.navigate(3);
+            }
+        }
+
+        SidebarItem {
+            x: 0px;
+            y: 208px;
+            width: nav-scroll.width - 10px;
+            title: "Cloud & Sync";
+            subtitle: "Storage and sync";
+            active: root.selected-page == 4;
+
+            clicked => {
+                root.navigate(4);
+            }
+        }
+
+        SidebarItem {
+            x: 0px;
+            y: 260px;
+            width: nav-scroll.width - 10px;
+            title: "Forge Ecosystem";
+            subtitle: "Forge apps";
+            active: root.selected-page == 5;
+
+            clicked => {
+                root.navigate(5);
+            }
+        }
+
+        SidebarItem {
+            x: 0px;
+            y: 312px;
+            width: nav-scroll.width - 10px;
+            title: "About";
+            subtitle: "Project info";
+            active: root.selected-page == 7;
+
+            clicked => {
+                root.navigate(7);
+            }
+        }
+    }
+
+    Rectangle {
+        x: 14px;
+        y: parent.height - 132px;
+        width: parent.width - 28px;
+        height: 1px;
+        background: #2e2e2e;
+    }
+
+    TaskProgressBar {
+        x: 14px;
+        y: parent.height - 112px;
+        width: parent.width - 28px;
+        active: root.task-progress-active;
+        percent: root.task-progress-percent;
+        title: root.task-progress-title;
+        detail: root.task-progress-detail;
+    }
+}

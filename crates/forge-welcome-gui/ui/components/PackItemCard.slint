@@ -1,0 +1,240 @@
+export component PackItemCard inherits Rectangle {
+    in property <bool> selected: false;
+    in property <bool> installed: false;
+    in property <bool> removable: false;
+    in property <int> item-state: 0;
+    in property <int> progress-percent: 0;
+    in property <bool> has-icon-image: false;
+    in property <image> icon-image;
+    in property <string> title: "Application";
+    in property <string> description: "Application description";
+    in property <string> metadata: "Package metadata";
+    in property <string> status-text: "Available";
+
+    callback toggled;
+    callback remove-requested;
+
+    height: 148px;
+    border-radius: 14px;
+    background: #1c1c1c;
+    border-width: 1px;
+    border-color: root.selected || root.installed ? #ff7a18 : #333333;
+
+    Rectangle {
+        x: 18px;
+        y: 62px;
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: root.installed ? #666666 : root.selected ? #ff7a18 : #555555;
+        background: root.installed ? #242424 : root.selected ? #ff7a18 : #202020;
+
+        Text {
+            text: root.installed ? "" : root.selected ? "✓" : "";
+            x: 0px;
+            y: -1px;
+            width: parent.width;
+            height: parent.height;
+            color: #111111;
+            font-size: 16px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                if !root.installed && root.item-state != 3 {
+                    root.toggled();
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 62px;
+        y: 42px;
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        background: #242424;
+        border-width: 1px;
+        border-color: #3a3a3a;
+        clip: true;
+
+        if root.has-icon-image: Image {
+            x: 10px;
+            y: 10px;
+            width: parent.width - 20px;
+            height: parent.height - 20px;
+            source: root.icon-image;
+            image-fit: contain;
+        }
+
+        if !root.has-icon-image: Rectangle {
+            x: 18px;
+            y: 18px;
+            width: parent.width - 36px;
+            height: parent.height - 36px;
+            border-radius: 7px;
+            background: transparent;
+            border-width: 2px;
+            border-color: #555555;
+        }
+    }
+
+    Text {
+        x: 148px;
+        y: 28px;
+        width: parent.width - 370px;
+        text: root.title;
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 800;
+        overflow: elide;
+    }
+
+    Text {
+        x: 148px;
+        y: 60px;
+        width: parent.width - 370px;
+        height: 42px;
+        text: root.description;
+        color: #cfcfcf;
+        font-size: 14px;
+        wrap: word-wrap;
+        overflow: elide;
+    }
+
+    Text {
+        x: 148px;
+        y: 108px;
+        width: parent.width - 370px;
+        height: 20px;
+        text: root.metadata;
+        color: #8d8d8d;
+        font-size: 12px;
+        overflow: elide;
+    }
+
+    if root.item-state == 3: Rectangle {
+        x: parent.width - 188px;
+        y: 53px;
+        width: 148px;
+        height: 42px;
+        background: transparent;
+
+        Text {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            text: root.status-text;
+            color: #ffffff;
+            font-size: 12px;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+
+        Rectangle {
+            x: 0px;
+            y: 24px;
+            width: parent.width;
+            height: 8px;
+            border-radius: 4px;
+            background: #303030;
+
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: parent.width * root.progress-percent / 100;
+                height: parent.height;
+                border-radius: parent.border-radius;
+                background: #ff7a18;
+            }
+        }
+    }
+
+    if root.item-state != 3 && root.installed && root.removable: Rectangle {
+        x: parent.width - 106px;
+        y: 50px;
+        width: 54px;
+        height: 48px;
+        border-radius: 12px;
+        background: #2a1515;
+        border-width: 1px;
+        border-color: #8a2d2d;
+
+        Text {
+            text: "🗑";
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            color: #ff5555;
+            font-size: 22px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                root.remove-requested();
+            }
+        }
+    }
+
+    if root.item-state != 3 && root.installed && !root.removable: Rectangle {
+        x: parent.width - 154px;
+        y: 55px;
+        width: 114px;
+        height: 38px;
+        border-radius: 19px;
+        background: #232323;
+        border-width: 1px;
+        border-color: #555555;
+
+        Text {
+            text: "Managed";
+            x: 12px;
+            y: 0px;
+            width: parent.width - 24px;
+            height: parent.height;
+            color: #bdbdbd;
+            font-size: 13px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    if root.item-state != 3 && !root.installed: Rectangle {
+        x: parent.width - 170px;
+        y: 55px;
+        width: 130px;
+        height: 38px;
+        border-radius: 19px;
+        background: root.selected ? #2d2418 : #232323;
+        border-width: 1px;
+        border-color: root.selected ? #ff7a18 : #3a3a3a;
+
+        Text {
+            text: root.status-text;
+            x: 12px;
+            y: 0px;
+            width: parent.width - 24px;
+            height: parent.height;
+            color: root.selected ? #ffb15f : #bdbdbd;
+            font-size: 13px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}

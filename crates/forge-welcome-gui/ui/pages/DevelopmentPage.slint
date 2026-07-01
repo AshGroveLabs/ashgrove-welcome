@@ -1,0 +1,133 @@
+import { ForgeButton } from "../components/ForgeButton.slint";
+import { ForgeScrollArea } from "../components/ForgeScrollArea.slint";
+import { PackItemCard } from "../components/PackItemCard.slint";
+
+export component DevelopmentPage inherits Rectangle {
+    in property <string> dev-status-text;
+    in property <string> dev-summary-text;
+    in property <string> install-preview-text;
+    in property <string> last-action-text;
+
+    in property <bool> dev-item-selected: true;
+    in property <bool> dev-item-installed: false;
+    in property <bool> dev-item-removable: false;
+    in property <int> dev-item-state: 1;
+    in property <int> dev-item-progress: 0;
+    in property <string> dev-item-status-text: "Ready";
+    in property <string> dev-item-metadata: "Host application · kate · Development Pack validation item";
+    in property <bool> dev-item-has-icon-image: false;
+    in property <image> dev-item-icon-image;
+
+    callback toggle-development-item;
+    callback remove-development-item;
+    callback install-selected;
+
+    background: #121212;
+
+    Text {
+        text: "Development";
+        x: 56px;
+        y: 42px;
+        color: #ffffff;
+        font-size: 42px;
+        font-weight: 800;
+    }
+
+    Text {
+        text: "Select development applications and install them from this page.";
+        x: 56px;
+        y: 102px;
+        color: #b8b8b8;
+        font-size: 19px;
+    }
+
+    Rectangle {
+        x: 56px;
+        y: 145px;
+        width: parent.width - 112px;
+        height: 92px;
+        border-radius: 14px;
+        background: #181818cc;
+        border-width: 1px;
+        border-color: #333333;
+
+        Text {
+            text: "Development Pack";
+            x: 24px;
+            y: 18px;
+            color: #ff7a18;
+            font-size: 20px;
+            font-weight: 800;
+        }
+
+        Text {
+            text: root.dev-summary-text;
+            x: 24px;
+            y: 50px;
+            width: parent.width - 48px;
+            color: #d8d8d8;
+            font-size: 15px;
+            font-weight: 600;
+            overflow: elide;
+        }
+    }
+
+    Rectangle {
+        x: 56px;
+        y: 257px;
+        width: parent.width - 112px;
+        height: parent.height - 365px;
+        border-radius: 14px;
+        background: #181818cc;
+        border-width: 1px;
+        border-color: #333333;
+        clip: true;
+
+        ForgeScrollArea {
+            x: 24px;
+            y: 24px;
+            width: parent.width - 48px;
+            height: parent.height - 48px;
+            content-height: 164px;
+
+            PackItemCard {
+                x: 0px;
+                y: 0px;
+                width: parent.width - 12px;
+                selected: root.dev-item-selected;
+                installed: root.dev-item-installed;
+                removable: root.dev-item-removable;
+                item-state: root.dev-item-state;
+                progress-percent: root.dev-item-progress;
+                has-icon-image: root.dev-item-has-icon-image;
+                icon-image: root.dev-item-icon-image;
+                title: "Kate";
+                description: "Advanced KDE text editor for development notes, scripts, configuration files, and source editing.";
+                metadata: root.dev-item-metadata;
+                status-text: root.dev-item-status-text;
+
+                toggled => {
+                    root.toggle-development-item();
+                }
+
+                remove-requested => {
+                    root.remove-development-item();
+                }
+            }
+        }
+    }
+
+    ForgeButton {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - 96px;
+        width: 280px;
+        height: 72px;
+        primary: true;
+        icon: "⚒";
+        label: "Install Selected";
+
+        clicked => {
+            root.install-selected();
+        }
+    }
+}

@@ -1,0 +1,18 @@
+# Rust build output
+/target/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Local test artifacts
+test.txt
+
+# ChatGPT / source-analysis helper files
+forge-welcome-source-map.txt
+forge-welcome-symbol-search.txt
+
+# Logs
+*.log

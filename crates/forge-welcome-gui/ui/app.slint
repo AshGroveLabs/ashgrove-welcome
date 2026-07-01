@@ -1,0 +1,146 @@
+import { Sidebar } from "components/Sidebar.slint";
+import { HomePage } from "pages/HomePage.slint";
+import { DevelopmentPage } from "pages/DevelopmentPage.slint";
+import { PlaceholderPage } from "pages/PlaceholderPage.slint";
+import { InstallReviewDialog } from "components/InstallReviewDialog.slint";
+
+export component AppWindow inherits Window {
+    in-out property <int> selected-page: 0;
+    in-out property <bool> show-install-dialog: false;
+    in-out property <int> install-state: 0;
+
+    in-out property <bool> dev-item-selected: true;
+    in-out property <bool> dev-item-installed: false;
+    in-out property <bool> dev-item-removable: false;
+    in-out property <int> dev-item-state: 1;
+    in-out property <int> dev-item-progress: 0;
+    in-out property <string> dev-item-status-text: "Ready";
+    in-out property <string> dev-item-metadata: "Host application · kate · Development Pack validation item";
+    in-out property <bool> dev-item-has-icon-image: false;
+    in-out property <image> dev-item-icon-image;
+
+    in-out property <bool> task-progress-active: false;
+    in-out property <int> task-progress-percent: 0;
+    in-out property <string> task-progress-title: "Tasks (0%)";
+    in-out property <string> task-progress-detail: "Idle";
+
+    in property <string> dev-status-text;
+    in property <string> dev-summary-text;
+    in property <string> install-preview-text;
+    in property <string> last-action-text;
+    in property <string> active-pack-name;
+
+    in property <int> install-progress-current: 0;
+    in property <int> install-progress-total: 0;
+    in property <string> install-progress-message;
+
+    callback preview-development-install();
+    callback install-development-selected();
+    callback toggle-development-item-selection();
+    callback remove-development-item();
+    callback close-install-dialog();
+    callback confirm-installation();
+
+    width: 1100px;
+    height: 700px;
+    title: "Forge Welcome";
+    background: #121212;
+
+    HorizontalLayout {
+        spacing: 0px;
+
+        Sidebar {
+            selected-page: root.selected-page;
+            task-progress-active: root.task-progress-active;
+            task-progress-percent: root.task-progress-percent;
+            task-progress-title: root.task-progress-title;
+            task-progress-detail: root.task-progress-detail;
+
+            navigate(page) => {
+                root.selected-page = page;
+            }
+        }
+
+        if root.selected-page == 0: HomePage { }
+
+        if root.selected-page == 1: DevelopmentPage {
+            dev-status-text: root.dev-status-text;
+            dev-summary-text: root.dev-summary-text;
+            install-preview-text: root.install-preview-text;
+            last-action-text: root.last-action-text;
+
+            dev-item-selected: root.dev-item-selected;
+            dev-item-installed: root.dev-item-installed;
+            dev-item-removable: root.dev-item-removable;
+            dev-item-state: root.dev-item-state;
+            dev-item-progress: root.dev-item-progress;
+            dev-item-status-text: root.dev-item-status-text;
+            dev-item-metadata: root.dev-item-metadata;
+            dev-item-has-icon-image: root.dev-item-has-icon-image;
+            dev-item-icon-image: root.dev-item-icon-image;
+
+            toggle-development-item => {
+                root.toggle-development-item-selection();
+            }
+
+            remove-development-item => {
+                root.remove-development-item();
+            }
+
+            install-selected => {
+                root.install-development-selected();
+            }
+        }
+
+        if root.selected-page == 2: PlaceholderPage {
+            title: "Gaming";
+            subtitle: "Install and configure gaming tools for ForgeOS.";
+        }
+
+        if root.selected-page == 3: PlaceholderPage {
+            title: "Productivity";
+            subtitle: "Install productivity applications and writing tools.";
+        }
+
+        if root.selected-page == 4: PlaceholderPage {
+            title: "Cloud & Sync";
+            subtitle: "Configure cloud storage and synchronization tools.";
+        }
+
+        if root.selected-page == 5: PlaceholderPage {
+            title: "Forge Ecosystem";
+            subtitle: "Manage OpenForge, Rust-GPT, Forge Assistant, and Forge IDE.";
+        }
+
+        if root.selected-page == 6: PlaceholderPage {
+            title: "System";
+            subtitle: "View ForgeOS system status, updates, and runtime information.";
+        }
+
+        if root.selected-page == 7: PlaceholderPage {
+            title: "About";
+            subtitle: "ForgeOS Welcome Center information, credits, and links.";
+        }
+    }
+
+    if root.show-install-dialog: InstallReviewDialog {
+        width: root.width;
+        height: root.height;
+
+        pack-name: root.active-pack-name;
+        preview-text: root.install-preview-text;
+        install-state: root.install-state;
+
+        progress-current: root.install-progress-current;
+        progress-total: root.install-progress-total;
+        progress-message: root.install-progress-message;
+
+        close => {
+            root.close-install-dialog();
+        }
+
+        install => {
+            root.confirm-installation();
+        }
+    }
+}
