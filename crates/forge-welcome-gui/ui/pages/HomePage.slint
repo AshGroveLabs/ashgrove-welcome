@@ -1,0 +1,88 @@
+import { ForgeButton } from "../components/ForgeButton.slint";
+import { HeroDivider } from "../components/HeroDivider.slint";
+
+export component HomePage inherits Rectangle {
+    background: #121212;
+
+    Image {
+        source: @image-url("../../assets/logos/forge-main-background.png");
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        image-fit: cover;
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        background: #00000033;
+    }
+
+    Image {
+        source: @image-url("../../assets/logos/forgeos-logo-v1.0.1.png");
+        width: 560px;
+        height: 240px;
+        x: (parent.width - self.width) / 2 - 30px;
+        y: 55px;
+        image-fit: contain;
+    }
+
+    Text {
+        text: "Welcome to ForgeOS";
+        x: 0px;
+        y: 350px;
+        width: parent.width;
+        horizontal-alignment: center;
+        color: #ffffff;
+        font-size: 50px;
+        font-weight: 800;
+    }
+
+    HeroDivider {
+        x: (parent.width - self.width) / 2 - 30px;
+        y: 428px;
+    }
+
+    Text {
+        text: "Atomic Linux for Developers,\nCreators and Gamers";
+        x: 0px;
+        y: 465px;
+        width: parent.width;
+        horizontal-alignment: center;
+        color: #d6d6d6;
+        font-size: 24px;
+    }
+
+    HorizontalLayout {
+        x: (parent.width - self.width) / 2 - 20px;
+        y: 560px;
+        width: 780px;
+        height: 80px;
+        spacing: 24px;
+
+        ForgeButton {
+            width: 250px;
+            height: 80px;
+            primary: true;
+            icon: "🚀";
+            label: "Setup My System";
+        }
+
+        ForgeButton {
+            width: 240px;
+            height: 80px;
+            icon: "📖";
+            label: "Documentation";
+        }
+
+        ForgeButton {
+            width: 240px;
+            height: 80px;
+            icon: "👥";
+            label: "Community";
+        }
+    }
+}

@@ -1,0 +1,43 @@
+export component PlaceholderPage inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+
+    background: #121212;
+
+    Text {
+        text: root.title;
+        x: 56px;
+        y: 56px;
+        color: #ffffff;
+        font-size: 42px;
+        font-weight: 800;
+    }
+
+    Text {
+        text: root.subtitle;
+        x: 56px;
+        y: 116px;
+        color: #b8b8b8;
+        font-size: 20px;
+    }
+
+    Rectangle {
+        x: 56px;
+        y: 180px;
+        width: parent.width - 112px;
+        height: 280px;
+        border-radius: 14px;
+        background: #181818cc;
+        border-width: 1px;
+        border-color: #333333;
+
+        Text {
+            text: "Coming Soon";
+            color: #ff7a18;
+            font-size: 30px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

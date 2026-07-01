@@ -1,0 +1,55 @@
+export component ForgeButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> primary: false;
+
+    callback clicked;
+
+    width: 280px;
+    height: 80px;
+
+    border-radius: 8px;
+    border-width: 2px;
+    border-color: primary ? #ff7a18 : #777777;
+    background: primary ? #18120fdd : #181818cc;
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+   if root.icon != "": HorizontalLayout {
+        padding-left: 26px;
+        padding-right: 24px;
+        spacing: 18px;
+
+        Text {
+            text: root.icon;
+            color: root.primary ? #ff7a18 : #ffffff;
+            font-size: 30px;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: root.primary ? #ff7a18 : #ffffff;
+            font-size: 20px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+
+    if root.icon == "": Text {
+        text: root.label;
+        color: root.primary ? #ff7a18 : #ffffff;
+        font-size: 20px;
+        font-weight: 700;
+
+        width: parent.width;
+        height: parent.height;
+
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

@@ -1,0 +1,12 @@
+id: ecosystem-pack
+name: Forge Ecosystem Pack
+description: Forge ecosystem applications and tools.
+category: ecosystem
+
+host_packages: []
+
+flatpaks: []
+
+distrobox_packages: []
+
+requires_reboot: false

@@ -1,0 +1,186 @@
+import { ForgeButton } from "ForgeButton.slint";
+
+export component InstallReviewDialog inherits Rectangle {
+    in property <string> pack-name;
+    in property <string> preview-text;
+    in property <int> install-state: 0;
+
+    in property <int> progress-current: 0;
+    in property <int> progress-total: 0;
+    in property <string> progress-message;
+
+    callback close;
+    callback install;
+
+    x: 0px;
+    y: 0px;
+    width: 880px;
+    height: 700px;
+    background: #000000aa;
+
+    Rectangle {
+        width: 720px;
+        height: 520px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+
+        border-radius: 16px;
+        background: #181818;
+        border-width: 1px;
+        border-color: #444444;
+
+        Text {
+            text:
+                root.install-state == 0 ? "Review " + root.pack-name + " Installation" :
+                root.install-state == 1 ? root.pack-name + " Dry-Run Results" :
+                root.install-state == 2 ? "Confirm " + root.pack-name + " Installation" :
+                root.install-state == 3 ? "Processing " + root.pack-name :
+                root.install-state == 4 ? root.pack-name + " Installation Complete" :
+                root.pack-name + " Installation Failed";
+
+            x: 32px;
+            y: 28px;
+            color: #ffffff;
+            font-size: 30px;
+            font-weight: 800;
+        }
+
+        Text {
+            text:
+                root.install-state == 0 ? "Dry-run install plan. No system changes will be made yet." :
+                root.install-state == 1 ? "Dry-run completed. Review results before continuing to real installation." :
+                root.install-state == 2 ? "Final confirmation. This may modify the system." :
+                root.install-state == 3 ? root.progress-message :
+                root.install-state == 4 ? "Installation completed successfully." :
+                "Installation failed. Review the result output below.";
+
+            x: 32px;
+            y: 72px;
+            color: #b8b8b8;
+            font-size: 17px;
+        }
+
+        if root.install-state == 3: Rectangle {
+            x: 32px;
+            y: 104px;
+            width: parent.width - 64px;
+            height: 8px;
+            border-radius: 4px;
+            background: #2b2b2b;
+
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: root.progress-total > 0
+                    ? parent.width * root.progress-current / root.progress-total
+                    : 0px;
+                height: parent.height;
+                border-radius: 4px;
+                background: #ff7a18;
+            }
+        }
+
+        Rectangle {
+            x: 32px;
+            y: 116px;
+            width: parent.width - 64px;
+            height: 300px;
+            border-radius: 12px;
+            background: #111111;
+            border-width: 1px;
+            border-color: #333333;
+
+            Flickable {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: parent.height;
+
+                viewport-width: parent.width;
+                viewport-height: 900px;
+
+                Rectangle {
+                    width: parent.width;
+                    height: 900px;
+                    background: transparent;
+
+                    Text {
+                        text: root.preview-text;
+                        x: 20px;
+                        y: 18px;
+                        width: parent.width - 40px;
+                        color: #d8d8d8;
+                        font-size: 15px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: 32px;
+            y: 438px;
+            width: parent.width - 64px;
+            height: 1px;
+            background: #333333;
+        }
+
+        ForgeButton {
+            x: root.install-state == 4 || root.install-state == 5 ? 470px : 280px;
+            y: 456px;
+            width: 170px;
+            height: 52px;
+
+            primary: root.install-state == 4 || root.install-state == 5;
+
+            icon: "";
+            label: root.install-state == 4 || root.install-state == 5 ? "Close" : "Cancel";
+
+            clicked => {
+                root.close();
+            }
+        }
+
+        if root.install-state == 0: ForgeButton {
+            x: 470px;
+            y: 456px;
+            width: 190px;
+            height: 52px;
+            primary: true;
+            icon: "⚒";
+            label: "Dry Run";
+
+            clicked => {
+                root.install();
+            }
+        }
+
+        if root.install-state == 1: ForgeButton {
+            x: 470px;
+            y: 456px;
+            width: 190px;
+            height: 52px;
+            primary: true;
+            icon: "⚠";
+            label: "Review Install";
+
+            clicked => {
+                root.install();
+            }
+        }
+
+        if root.install-state == 2: ForgeButton {
+            x: 470px;
+            y: 456px;
+            width: 190px;
+            height: 52px;
+            primary: true;
+            icon: "⚒";
+            label: "Install";
+
+            clicked => {
+                root.install();
+            }
+        }
+    }
+}

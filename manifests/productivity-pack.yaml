@@ -1,0 +1,17 @@
+id: productivity-pack
+name: Productivity Pack
+description: Productivity applications for daily work.
+category: productivity
+
+host_packages: []
+
+flatpaks:
+  - md.obsidian.Obsidian
+  - org.libreoffice.LibreOffice
+  - org.onlyoffice.desktopeditors
+  - org.mozilla.Thunderbird
+  - com.super_productivity.SuperProductivity
+
+distrobox_packages: []
+
+requires_reboot: false

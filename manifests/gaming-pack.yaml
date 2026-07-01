@@ -1,0 +1,20 @@
+id: gaming-pack
+name: Gaming Pack
+description: Gaming environment for Forge OS.
+category: gaming
+
+host_packages:
+  - gamemode
+  - gamescope
+  - mangohud
+
+flatpaks:
+  - com.valvesoftware.Steam
+  - com.heroicgameslauncher.hgl
+  - net.lutris.Lutris
+  - net.davidotek.pupgui2
+  - com.discordapp.Discord
+
+distrobox_packages: []
+
+requires_reboot: false

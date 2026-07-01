@@ -1,0 +1,13 @@
+id: sync-pack
+name: Cloud and Sync Pack
+description: Synchronization and cloud services.
+category: cloud-sync
+
+host_packages: []
+
+flatpaks:
+  - me.kozec.syncthingtk
+
+distrobox_packages: []
+
+requires_reboot: false

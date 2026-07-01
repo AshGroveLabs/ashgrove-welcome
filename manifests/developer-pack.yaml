@@ -1,0 +1,21 @@
+id: developer-pack
+name: Developer Pack
+description: General software engineering environment for Forge OS.
+category: development
+
+host_packages:
+  - git
+  - gh
+  - podman
+  - distrobox
+
+flatpaks:
+  - com.vscodium.codium
+
+distrobox_packages:
+  - rust
+  - cargo
+  - rustfmt
+  - rust-analyzer
+
+requires_reboot: true
