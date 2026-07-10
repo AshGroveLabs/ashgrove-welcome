@@ -1,55 +1,94 @@
-# CHANGELOG
+# Changelog
 
-All notable changes to Forge Welcome are tracked here.
+All notable project changes for AshGrove Welcome are recorded here.
 
-## [Unreleased]
+The project was originally developed as Forge Welcome. Internal Rust crate names currently remain `forge-welcome-*`.
 
-### Changed
+## Versioning
 
-- Reframed the active v0.6.x direction from Gaming Pack-first expansion to `v0.6.x — Production UI/UX Finalization`.
-- Replaced the planned v0.6.0 Gaming Pack-first sprint with `v0.6.0 — Production UI/UX Foundation`.
-- Moved `ForgeScrollArea` from deferred/future work into the active v0.6.x milestone scope.
-- Updated install UX direction from dialog-centered installation to inline pack-page installation.
-- Defined `Install Selected` as the target explicit user action for selected pack items.
-- Marked installation sub-dialogs as non-final for the production install UX.
-- Deferred Gaming Pack UI expansion until the shared production UI/UX foundation is implemented.
+Roadmap milestones use three-part versions. Implementation revisions use four-part versions under their parent roadmap milestone.
 
-### Added
+## v0.6.2 — Task Progress and Logging
 
-- Planned reusable Slint component: `ForgeScrollArea.slint`.
-- Planned reusable Slint component: `PackItemCard.slint`.
-- Planned reusable Slint component: `TaskProgressBar.slint`.
-- Planned Discover-style installable item cards for pack pages.
-- Planned lower-left `Tasks (%)` global progress indicator.
-- Planned persistent workflow log at `~/.local/state/forge-welcome/forge-welcome.log`.
-- Planned inline per-item progress and status states.
+**Status:** Planned
 
-### Deprecated
+### Planned
 
-- Dialog-centered installation workflow as the final production UX.
-- `Review Installation` wording for the main install button.
+- Improve sidebar `Tasks (%)` phase tracking.
+- Improve card-level workflow messages.
+- Strengthen persistent install/uninstall workflow logging.
+- Improve failure/recovery diagnostics.
+- Preserve v0.6.1 direct install/uninstall behavior.
 
-### Safety
+## v0.6.1 — Inline Pack Install Workflow
 
-- Reaffirmed that dry-run safety remains required.
-- Reaffirmed that real execution requires explicit user action.
-- Reaffirmed that `ExecutionBoundary.commands_allowed == true` remains the execution gate.
-- Reaffirmed that real Gaming Pack execution remains disabled.
-- Reaffirmed that arbitrary shell execution remains forbidden.
+**Status:** Complete
 
----
+### v0.6.1.0
 
-## [v0.5.9] — Installation Workflow Stabilization
+- Implemented initial inline Development Pack install/uninstall workflow.
+- Replaced main legacy dialog-centered Development Pack path with inline page behavior.
 
-### Completed
+### v0.6.1.1
 
-- Stabilized guarded Development Pack installation workflow.
-- Added `ExecutionWorkflowStatus`.
-- Added execution-report helper methods.
-- Added command-result helper methods.
-- Reduced duplication in command/result mapping.
-- Preserved dry-run behavior.
-- Preserved explicit confirmation and execution boundary gate.
-- Preserved Development Pack-only real execution.
-- Avoided arbitrary shell execution.
-- Completed formatter, build, lint, tests, and GUI validation.
+- Removed dry-run/review panel from the Development page.
+- Switched `Install Selected` to direct guarded installation.
+
+### v0.6.1.2
+
+- Fixed exhaustive workflow status handling after dry-run UI removal.
+
+### v0.6.1.3
+
+- Added visible card-level progress.
+- Updated sidebar `Tasks (%)` during direct install workflow.
+- Removed visible `Selected` / `Managed` badges from the list page.
+
+### v0.6.1.4
+
+- Corrected checkbox activation.
+- Improved Kate detection and trash-can behavior.
+
+### v0.6.1.5
+
+- Corrected host Kate detection when Kate was not active on the host.
+
+### v0.6.1.6
+
+- Normalized stale or unknown installed states so they do not incorrectly disable the available-card path.
+
+### v0.6.1.7
+
+- Added container runtime action guard to prevent package actions from running inside `forge-dev`.
+
+### v0.6.1.8
+
+- Moved install/uninstall execution off the UI thread.
+- Improved behavior when rpm-ostree crashes or fails.
+- Replaced checkbox-looking fallback icon with a `K` placeholder.
+
+### v0.6.1.9
+
+- Added pending reboot / active runtime detection behavior for rpm-ostree installs.
+- Validated Kate install and uninstall workflow.
+- Validated checkbox enabled when Kate is not installed.
+- Validated checkbox disabled and red trash can visible after Kate installation.
+- Validated red trash action removes Kate only.
+
+### Final Validation
+
+- Final accepted revision: `v0.6.1.9`
+- Final validation artifact: `ashgrove_welcome_v0.6.1.9.zip`
+- Validation result: Passed
+- Code review result: Ready
+
+## v0.6.0 — Production UI/UX Foundation
+
+**Status:** Complete
+
+- Added `ForgeScrollArea.slint`.
+- Added `PackItemCard.slint`.
+- Added `TaskProgressBar.slint`.
+- Added production-style Kate item card.
+- Moved `Tasks (%)` into sidebar.
+- Added source-aware detection foundation.

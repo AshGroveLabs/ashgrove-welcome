@@ -8,10 +8,10 @@ export component DevelopmentPage inherits Rectangle {
     in property <string> install-preview-text;
     in property <string> last-action-text;
 
-    in property <bool> dev-item-selected: true;
+    in property <bool> dev-item-selected: false;
     in property <bool> dev-item-installed: false;
     in property <bool> dev-item-removable: false;
-    in property <int> dev-item-state: 1;
+    in property <int> dev-item-state: 0;
     in property <int> dev-item-progress: 0;
     in property <string> dev-item-status-text: "Ready";
     in property <string> dev-item-metadata: "Host application · kate · Development Pack validation item";

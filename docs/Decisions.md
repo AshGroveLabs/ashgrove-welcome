@@ -1,192 +1,92 @@
 ---
-modified: 2026-07-01
+modified: 2026-07-10
 type: decisions
-project: Forge Welcome
-parent_project: Forge OS
+project: AshGrove Welcome
 status: active
 ---
 
 # Decisions
 
-## DEC-2026-07-01-001 — Reframe v0.6.x as Production UI/UX Finalization
+## D-0001 — Keep Internal Crate Names for Now
 
-### Status
+**Status:** Accepted
 
-Accepted
+The public project name is AshGrove Welcome, but internal Rust crate names remain `forge-welcome-*` until a dedicated rename milestone.
 
-### Context
+## D-0002 — v0.6.x Focuses on Production UI/UX
 
-The prior v0.6.0 plan focused on Gaming Pack UI expansion. During Kate installation validation and UI review, the current interface was found to need production-level UI/UX work before expanding additional pack pages.
+**Status:** Accepted
+
+`v0.6.x` focuses on production-ready install page behavior before broader multi-pack expansion.
+
+## D-0003 — Build Validation and Runtime Validation Are Separate
+
+**Status:** Accepted
+
+Build validation may run in `forge-dev`. GUI runtime package detection and package actions must run from the host.
+
+## D-0004 — Three-Part Milestones and Four-Part Implementation Revisions
+
+**Status:** Accepted
 
 ### Decision
 
-Reframe v0.6.x as:
+Three-part versions identify roadmap milestones:
 
 ```text
-v0.6.x — Production UI/UX Finalization
+v0.6.1
+v0.6.2
 ```
 
-The first implementation milestone becomes:
+Four-part versions identify implementation revisions:
 
 ```text
-v0.6.0 — Production UI/UX Foundation
+v0.6.1.0
+v0.6.1.1
+v0.6.1.9
 ```
 
-Gaming Pack expansion is deferred until the shared production UI foundation is implemented.
+### Rules
 
-### Consequences
+- Revision zero is the initial implementation.
+- Fixes increment only the final revision number.
+- Fixes do not consume the next roadmap milestone.
+- Code review uses only the latest implementation revision.
+- Validation and release artifacts never overwrite earlier revisions.
+- Validation artifacts must use lowercase project names, underscores, and full four-part revisions.
 
-- Project documents must replace the Gaming Pack-first v0.6.0 direction.
-- New v0.6.0 work starts with reusable UI components.
-- Future pack pages will use the same installable item card and progress model.
-
----
-
-## DEC-2026-07-01-002 — Implement ForgeScrollArea During v0.6.x
-
-### Status
-
-Accepted
-
-### Context
-
-`ForgeScrollArea` was previously deferred until later v0.6.x work. The new production UI/UX milestone requires scrollable installable item sections immediately.
-
-### Decision
-
-Implement `ForgeScrollArea.slint` during the active v0.6.x milestone.
-
-### Consequences
-
-- Scrollable UI becomes part of the current milestone scope.
-- Development Pack item list should use the new scroll component first.
-- Future pack pages should reuse this component.
-
----
-
-## DEC-2026-07-01-003 — Move Main Install UX Inline
-
-### Status
-
-Accepted
-
-### Context
-
-The current install flow uses an installation review dialog. The desired production UX uses the main pack page as the review and action surface.
-
-### Decision
-
-The production install flow should be inline:
+### Examples
 
 ```text
-Pack Page
-    ↓
-Selectable item list
-    ↓
-Install Selected
-    ↓
-Inline progress/status
-    ↓
-Inline result summary
+ashgrove_welcome_v0.6.1.0.zip
+ashgrove_welcome_v0.6.1.1.zip
+ashgrove_welcome_v0.6.1.9.zip
 ```
 
-Installation sub-dialogs are not part of the final production install UX.
+## D-0005 — v0.6.1 Final Accepted Revision
 
-### Consequences
+**Status:** Accepted
 
-- `InstallReviewDialog.slint` may remain temporarily during migration.
-- Future implementation should migrate command execution and result display into the page workflow.
-- The visible selected item list becomes the user's review surface.
-
----
-
-## DEC-2026-07-01-004 — Use Discover-Inspired Pack Item Cards
-
-### Status
-
-Accepted
-
-### Context
-
-KDE Discover provides a clear pattern for installable application lists and update progress.
-
-### Decision
-
-Forge Welcome pack pages should use Discover-inspired item cards containing:
-
-- checkbox
-- icon
-- app name
-- description
-- source/package metadata
-- right-side action/status area
-
-Installed items may show a red trash/remove action only where semantically valid.
-
-### Consequences
-
-- Pack pages should not use plain text lists for installable applications.
-- UI state must support available, selected, installed, installing, failed, skipped, and blocked states.
-- The pattern should be reusable across Development, Gaming, Productivity, Cloud & Sync, and Forge Ecosystem pages.
-
----
-
-## DEC-2026-07-01-005 — Preserve Existing Safety Model
-
-### Status
-
-Accepted
-
-### Context
-
-v0.5.9 stabilized the guarded execution workflow.
-
-### Decision
-
-The production UI/UX work must not weaken the installation safety model.
-
-Required rule:
-
-```rust
-execution_plan.command_boundary.commands_allowed == true
-```
-
-The following remains insufficient:
-
-```rust
-dry_run == false
-```
-
-### Consequences
-
-- UI changes must preserve dry-run safety.
-- Real execution still requires explicit user action.
-- Real Gaming Pack execution remains disabled.
-- Arbitrary shell execution remains forbidden.
-
----
-
-## DEC-2026-07-01-006 — Add Persistent Workflow Logging
-
-### Status
-
-Accepted
-
-### Context
-
-Kate installation took a long time and required better diagnostics.
-
-### Decision
-
-Forge Welcome should write workflow logs to:
+`v0.6.1 — Inline Pack Install Workflow` completed at:
 
 ```text
-~/.local/state/forge-welcome/forge-welcome.log
+v0.6.1.9
 ```
 
-Logs should include workflow events, command start/end, exit code, duration, and refresh result.
+with final artifact:
 
-### Consequences
+```text
+ashgrove_welcome_v0.6.1.9.zip
+```
 
-- Logging becomes part of v0.6.x production UI/UX work.
-- Logs must not contain passwords, tokens, full environment dumps, or secrets.
+## D-0006 — Container Runtime Actions Are Blocked
+
+**Status:** Accepted
+
+The GUI may be visually inspected in a container, but install/uninstall actions must be blocked there. Host package detection must use the host runtime.
+
+## D-0007 — Source-Aware Per-Item Uninstall
+
+**Status:** Accepted**
+
+Installed/removable applications show a red trash action. Trash is per application and does not uninstall the entire pack.

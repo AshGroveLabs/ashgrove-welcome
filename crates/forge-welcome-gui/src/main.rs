@@ -1,19 +1,18 @@
 use std::{
-    cell::Cell,
     env, fs,
     fs::OpenOptions,
     io::Write,
-    path::PathBuf,
-    rc::Rc,
-    time::{SystemTime, UNIX_EPOCH},
+    path::{Path, PathBuf},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use forge_welcome_core::{
     CommandResult, CommandSpec, CommandStatus, DetectionProbeLogEntry, DevelopmentToolStatus,
     ExecutionBoundary, ExecutionMode, ExecutionPlan, ExecutionReport, ExecutionStep,
     ExecutionWorkflowStatus, InstallSource, Pack, create_confirmed_development_execution_plan,
-    create_execution_plan, create_execution_plan_with_mode, create_install_plan,
-    detect_development_pack_status, execute_execution_plan, load_pack_from_file,
+    create_install_plan, detect_development_pack_status, execute_execution_plan,
+    load_pack_from_file,
 };
 
 slint::include_modules!();
@@ -27,12 +26,6 @@ const ITEM_STATE_FAILED: i32 = 5;
 
 const KATE_PACKAGE_NAME: &str = "kate";
 const KATE_FLATPAK_APP_ID: &str = "org.kde.kate";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PendingAction {
-    InstallDevelopment,
-    UninstallKate,
-}
 
 #[derive(Debug, Clone, Copy)]
 enum PackId {
@@ -76,7 +69,6 @@ struct PackRefreshResult {
 #[derive(Debug, Clone)]
 struct TransactionResult {
     pack_name: String,
-    dry_run: bool,
     succeeded: Vec<TransactionItem>,
     failed: Vec<TransactionItem>,
     warnings: Vec<String>,
@@ -97,8 +89,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     app.set_last_action_text("Last action: None.".into());
     app.set_active_pack_name(PackId::Development.display_name().into());
-
-    app.set_install_preview_text("Preview Install.".into());
+    app.set_install_preview_text("Ready.".into());
     app.set_install_progress_current(0);
     app.set_install_progress_total(0);
     app.set_install_progress_message("Ready.".into());
@@ -106,9 +97,21 @@ fn main() -> Result<(), slint::PlatformError> {
     reset_task_progress(&app);
     set_development_item_icon(&app);
     append_log_event("log_path", &format!("{}", log_file_path().display()));
-    refresh_pack_status(&app, PackId::Development);
 
-    let pending_action = Rc::new(Cell::new(PendingAction::InstallDevelopment));
+    if is_container_runtime() {
+        append_log_event(
+            "runtime_detected",
+            "container runtime detected; package detection/actions are not valid for host state",
+        );
+        app.set_last_action_text(
+            "Last action: Container runtime detected; install/uninstall actions are blocked. Run the GUI from the host."
+                .into(),
+        );
+    } else {
+        append_log_event("runtime_detected", "host runtime detected");
+    }
+
+    refresh_pack_status(&app, PackId::Development);
 
     let app_weak = app.as_weak();
 
@@ -136,19 +139,22 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     let app_weak = app.as_weak();
-    let pending_action_for_install = Rc::clone(&pending_action);
 
     app.on_install_development_selected(move || {
         if let Some(app) = app_weak.upgrade() {
-            pending_action_for_install.set(PendingAction::InstallDevelopment);
-
-            // Re-read host state before starting the workflow. Kate may have been
-            // installed outside the current UI session, and installed state must
-            // always override selected state.
             append_log_event(
                 "install_selected_clicked",
-                "Development Pack Install Selected clicked",
+                "Development Pack Install Selected clicked; running install directly",
             );
+
+            if is_container_runtime() {
+                block_container_runtime_action(&app, "Kate installation");
+                return;
+            }
+
+            // Re-read host state before executing. Installed state must always
+            // override selected state so an already-installed item is not
+            // reinstalled.
             refresh_pack_status(&app, PackId::Development);
 
             if app.get_dev_item_installed() {
@@ -172,38 +178,29 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
 
-            app.set_dev_item_state(ITEM_STATE_PENDING);
-            app.set_dev_item_progress(10);
-            app.set_dev_item_status_text("Preparing".into());
-            set_task_progress(&app, 10, "Preparing Kate");
-
-            // Temporary compatibility path for v0.6.0 Sprint 1:
-            // The new inline page is now the visible review surface, while the existing
-            // guarded dialog workflow remains available until v0.6.1 wires selected-item
-            // execution fully inline.
-            let pack_id = PackId::Development;
-            let preview = build_install_preview(pack_id);
-
-            app.set_active_pack_name(pack_id.display_name().into());
-            app.set_install_preview_text(preview.into());
-            app.set_install_progress_current(0);
-            app.set_install_progress_total(0);
-            app.set_install_progress_message("Ready.".into());
-            app.set_install_state(0);
-            app.set_show_install_dialog(true);
-
-            app.set_last_action_text(
-                "Last action: Install Selected prepared the Kate validation workflow.".into(),
-            );
+            begin_development_install(&app);
         }
     });
 
     let app_weak = app.as_weak();
-    let pending_action_for_remove = Rc::clone(&pending_action);
 
     app.on_remove_development_item(move || {
         if let Some(app) = app_weak.upgrade() {
-            append_log_event("remove_clicked", "Kate remove action clicked");
+            if app.get_dev_item_state() == ITEM_STATE_INSTALLING {
+                app.set_last_action_text("Last action: Kate workflow already in progress.".into());
+                return;
+            }
+
+            append_log_event(
+                "remove_clicked",
+                "Kate remove action clicked; running uninstall directly",
+            );
+
+            if is_container_runtime() {
+                block_container_runtime_action(&app, "Kate uninstall");
+                return;
+            }
+
             refresh_pack_status(&app, PackId::Development);
 
             let Some(kate_status) = current_kate_tool_status() else {
@@ -240,185 +237,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
 
-            let preview = build_kate_uninstall_confirmation(kate_status.install_source);
-            pending_action_for_remove.set(PendingAction::UninstallKate);
-
-            app.set_active_pack_name("Kate Uninstall".into());
-            app.set_install_preview_text(preview.into());
-            app.set_install_progress_current(0);
-            app.set_install_progress_total(0);
-            app.set_install_progress_message("Waiting for uninstall confirmation.".into());
-            app.set_install_state(2);
-            app.set_show_install_dialog(true);
-            app.set_dev_item_state(ITEM_STATE_PENDING);
-            app.set_dev_item_progress(0);
-            app.set_dev_item_status_text("Remove?".into());
-            reset_task_progress(&app);
-            app.set_last_action_text("Last action: Kate uninstall confirmation opened.".into());
-        }
-    });
-
-    let app_weak = app.as_weak();
-    let pending_action_for_preview = Rc::clone(&pending_action);
-
-    app.on_preview_development_install(move || {
-        if let Some(app) = app_weak.upgrade() {
-            pending_action_for_preview.set(PendingAction::InstallDevelopment);
-            let pack_id = PackId::Development;
-            let preview = build_install_preview(pack_id);
-
-            app.set_active_pack_name(pack_id.display_name().into());
-            app.set_install_preview_text(preview.into());
-            app.set_install_progress_current(0);
-            app.set_install_progress_total(0);
-            app.set_install_progress_message("Ready.".into());
-            app.set_install_state(0);
-            app.set_show_install_dialog(true);
-        }
-    });
-
-    let app_weak = app.as_weak();
-    let pending_action_for_close = Rc::clone(&pending_action);
-
-    app.on_close_install_dialog(move || {
-        if let Some(app) = app_weak.upgrade() {
-            app.set_show_install_dialog(false);
-
-            if pending_action_for_close.get() == PendingAction::UninstallKate {
-                pending_action_for_close.set(PendingAction::InstallDevelopment);
-                refresh_pack_status(&app, PackId::Development);
-                reset_task_progress(&app);
-                return;
-            }
-
-            if app.get_dev_item_state() == ITEM_STATE_PENDING {
-                app.set_dev_item_state(ITEM_STATE_SELECTED);
-                app.set_dev_item_progress(0);
-                app.set_dev_item_status_text("Selected".into());
-                reset_task_progress(&app);
-            }
-        }
-    });
-
-    let app_weak = app.as_weak();
-    let pending_action_for_confirm = Rc::clone(&pending_action);
-
-    app.on_confirm_installation(move || {
-        if let Some(app) = app_weak.upgrade() {
-            let state = app.get_install_state();
-
-            if pending_action_for_confirm.get() == PendingAction::UninstallKate {
-                handle_kate_uninstall_confirmation(&app, state);
-                if matches!(state, 2 | 4 | 5) {
-                    pending_action_for_confirm.set(PendingAction::InstallDevelopment);
-                }
-                return;
-            }
-
-            match state {
-                0 => {
-                    let pack_id = PackId::Development;
-
-                    app.set_install_state(3);
-                    app.set_install_progress_current(1);
-                    app.set_install_progress_total(3);
-                    app.set_install_progress_message("Preparing dry-run execution.".into());
-
-                    app.set_dev_item_state(ITEM_STATE_INSTALLING);
-                    app.set_dev_item_progress(35);
-                    app.set_dev_item_status_text("Dry-run".into());
-                    set_task_progress(&app, 35, "Dry-run");
-
-                    let result = build_dry_run_result(pack_id);
-
-                    app.set_install_progress_current(3);
-                    app.set_install_progress_message("Dry-run completed.".into());
-                    app.set_install_preview_text(result.into());
-                    app.set_install_state(1);
-
-                    app.set_dev_item_state(ITEM_STATE_SELECTED);
-                    app.set_dev_item_progress(0);
-                    app.set_dev_item_status_text("Selected".into());
-                    set_task_progress(&app, 100, "Dry-run complete");
-
-                    app.set_last_action_text(
-                        "Last action: Dry-run completed successfully. No system changes were made."
-                            .into(),
-                    );
-
-                    refresh_pack_status(&app, pack_id);
-                }
-
-                1 => {
-                    let pack_id = PackId::Development;
-                    let confirmation_preview = build_real_install_confirmation(pack_id);
-
-                    app.set_install_preview_text(confirmation_preview.into());
-                    app.set_install_progress_current(0);
-                    app.set_install_progress_total(0);
-                    app.set_install_progress_message("Waiting for final confirmation.".into());
-                    app.set_install_state(2);
-
-                    app.set_dev_item_state(ITEM_STATE_PENDING);
-                    app.set_dev_item_progress(0);
-                    app.set_dev_item_status_text("Confirm".into());
-                    set_task_progress(&app, 0, "Waiting");
-                }
-
-                2 => {
-                    let pack_id = PackId::Development;
-
-                    app.set_install_state(3);
-                    app.set_install_progress_current(1);
-                    app.set_install_progress_total(3);
-                    app.set_install_progress_message(
-                        "Running guarded Development Pack installation.".into(),
-                    );
-
-                    app.set_dev_item_state(ITEM_STATE_INSTALLING);
-                    app.set_dev_item_progress(50);
-                    app.set_dev_item_status_text("Installing".into());
-                    set_task_progress(&app, 50, "Installing Kate");
-
-                    let result = build_real_install_result(pack_id);
-                    let success = result.failed.is_empty();
-                    let rendered_result = render_transaction_result(&result);
-
-                    app.set_install_progress_current(3);
-                    app.set_install_progress_message("Installation workflow completed.".into());
-                    app.set_install_preview_text(rendered_result.into());
-                    app.set_install_state(if success { 4 } else { 5 });
-
-                    if success {
-                        app.set_dev_item_selected(false);
-                        app.set_dev_item_installed(true);
-                        app.set_dev_item_state(ITEM_STATE_INSTALLED);
-                        app.set_dev_item_progress(100);
-                        app.set_dev_item_status_text("Installed".into());
-                        set_task_progress(&app, 100, "Complete");
-
-                        app.set_last_action_text(
-                            "Last action: Development Pack installation completed.".into(),
-                        );
-                    } else {
-                        app.set_dev_item_state(ITEM_STATE_FAILED);
-                        app.set_dev_item_progress(100);
-                        app.set_dev_item_status_text("Failed".into());
-                        set_task_progress(&app, 100, "Failed");
-
-                        app.set_last_action_text(
-                            "Last action: Development Pack installation completed with failures."
-                                .into(),
-                        );
-                    }
-
-                    refresh_pack_status(&app, pack_id);
-                }
-
-                _ => {
-                    app.set_show_install_dialog(false);
-                }
-            }
+            begin_kate_uninstall(&app);
         }
     });
 
@@ -633,6 +452,38 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
+fn is_container_runtime() -> bool {
+    Path::new("/run/.containerenv").exists()
+        || Path::new("/.dockerenv").exists()
+        || env::var_os("container").is_some()
+}
+
+fn block_container_runtime_action(app: &AppWindow, action: &str) {
+    reset_task_progress(app);
+    app.set_dev_item_progress(0);
+    app.set_install_state(5);
+    app.set_install_progress_current(0);
+    app.set_install_progress_total(0);
+    app.set_install_progress_message(
+        "Blocked: AshGrove Welcome package actions must run from the host.".into(),
+    );
+    app.set_install_preview_text(
+        "Package action blocked because the GUI is running inside forge-dev/container. Close this instance and run ./target/debug/forge-welcome-gui from a host terminal."
+            .into(),
+    );
+    app.set_last_action_text(
+        format!(
+            "Last action: {action} blocked because this GUI is running inside forge-dev/container. Run from host."
+        )
+        .into(),
+    );
+
+    append_log_event(
+        "runtime_action_blocked",
+        &format!("action='{action}' reason='container runtime detected'"),
+    );
+}
+
 fn reset_task_progress(app: &AppWindow) {
     app.set_task_progress_active(false);
     app.set_task_progress_percent(0);
@@ -645,6 +496,292 @@ fn set_task_progress(app: &AppWindow, percent: i32, detail: &str) {
     app.set_task_progress_percent(percent);
     app.set_task_progress_title(format!("Tasks ({percent}%)").into());
     app.set_task_progress_detail(detail.into());
+}
+
+fn begin_development_install(app: &AppWindow) {
+    if is_container_runtime() {
+        block_container_runtime_action(app, "Kate installation");
+        return;
+    }
+
+    app.set_active_pack_name(PackId::Development.display_name().into());
+    app.set_install_state(3);
+    app.set_install_progress_current(1);
+    app.set_install_progress_total(3);
+    app.set_install_progress_message("Starting Development Pack installation.".into());
+    app.set_install_preview_text("Installing selected Development Pack item.".into());
+
+    app.set_dev_item_state(ITEM_STATE_INSTALLING);
+    app.set_dev_item_progress(5);
+    app.set_dev_item_status_text("Starting".into());
+    set_task_progress(app, 5, "Starting Kate install");
+    app.set_last_action_text("Last action: Starting Kate installation.".into());
+
+    append_log_event(
+        "install_progress_started",
+        "Kate install status meter displayed; command execution deferred to allow UI update",
+    );
+
+    schedule_development_install(app);
+}
+
+fn schedule_development_install(app: &AppWindow) {
+    let app_weak = app.as_weak();
+
+    slint::Timer::single_shot(Duration::from_millis(150), move || {
+        if let Some(app) = app_weak.upgrade() {
+            app.set_dev_item_progress(25);
+            app.set_dev_item_status_text("Preparing".into());
+            app.set_install_progress_current(1);
+            app.set_install_progress_message(
+                "Preparing guarded Development Pack installation.".into(),
+            );
+            set_task_progress(&app, 25, "Preparing Kate install");
+
+            let app_weak = app.as_weak();
+
+            slint::Timer::single_shot(Duration::from_millis(150), move || {
+                if let Some(app) = app_weak.upgrade() {
+                    run_development_install(&app);
+                }
+            });
+        }
+    });
+}
+
+fn begin_kate_uninstall(app: &AppWindow) {
+    if is_container_runtime() {
+        block_container_runtime_action(app, "Kate uninstall");
+        return;
+    }
+
+    app.set_active_pack_name("Kate Uninstall".into());
+    app.set_install_state(3);
+    app.set_install_progress_current(1);
+    app.set_install_progress_total(3);
+    app.set_install_progress_message("Starting Kate uninstall.".into());
+    app.set_install_preview_text("Removing Kate from the system.".into());
+
+    app.set_dev_item_state(ITEM_STATE_INSTALLING);
+    app.set_dev_item_progress(5);
+    app.set_dev_item_status_text("Starting".into());
+    set_task_progress(app, 5, "Starting Kate removal");
+    app.set_last_action_text("Last action: Starting Kate removal.".into());
+
+    append_log_event(
+        "uninstall_progress_started",
+        "Kate uninstall status meter displayed; command execution deferred to allow UI update",
+    );
+
+    schedule_kate_uninstall(app);
+}
+
+fn schedule_kate_uninstall(app: &AppWindow) {
+    let app_weak = app.as_weak();
+
+    slint::Timer::single_shot(Duration::from_millis(150), move || {
+        if let Some(app) = app_weak.upgrade() {
+            app.set_dev_item_progress(25);
+            app.set_dev_item_status_text("Preparing".into());
+            app.set_install_progress_current(1);
+            app.set_install_progress_message("Preparing guarded Kate uninstall.".into());
+            set_task_progress(&app, 25, "Preparing Kate removal");
+
+            let app_weak = app.as_weak();
+
+            slint::Timer::single_shot(Duration::from_millis(150), move || {
+                if let Some(app) = app_weak.upgrade() {
+                    run_kate_uninstall(&app);
+                }
+            });
+        }
+    });
+}
+
+fn run_development_install(app: &AppWindow) {
+    let pack_id = PackId::Development;
+
+    app.set_install_state(3);
+    app.set_install_progress_current(1);
+    app.set_install_progress_total(3);
+    app.set_install_progress_message("Running guarded Development Pack installation.".into());
+    app.set_active_pack_name(pack_id.display_name().into());
+
+    app.set_dev_item_state(ITEM_STATE_INSTALLING);
+    app.set_dev_item_progress(50);
+    app.set_dev_item_status_text("Installing".into());
+    set_task_progress(app, 50, "Installing Kate");
+    append_log_event(
+        "real_install_started",
+        "Development Pack real install started directly from Install Selected",
+    );
+
+    let app_weak = app.as_weak();
+
+    thread::spawn(move || {
+        append_log_event(
+            "install_worker_started",
+            "Development Pack install command moved off the Slint event loop",
+        );
+
+        let result = build_real_install_result(pack_id);
+
+        let dispatch = slint::invoke_from_event_loop(move || {
+            if let Some(app) = app_weak.upgrade() {
+                complete_development_install(&app, pack_id, result);
+            } else {
+                append_log_event(
+                    "install_worker_abandoned",
+                    "App window was closed before install result could be applied",
+                );
+            }
+        });
+
+        if let Err(error) = dispatch {
+            append_log_event(
+                "install_worker_dispatch_failed",
+                &format!("Failed to dispatch install result to UI event loop: {error:?}"),
+            );
+        }
+    });
+}
+
+fn complete_development_install(app: &AppWindow, pack_id: PackId, result: TransactionResult) {
+    let success = result.failed.is_empty();
+    let rendered_result = render_transaction_result(&result);
+
+    app.set_install_progress_current(3);
+    app.set_install_progress_message("Installation workflow completed.".into());
+    app.set_install_preview_text(rendered_result.clone().into());
+    app.set_install_state(if success { 4 } else { 5 });
+
+    append_log_event(
+        if success {
+            "install_completed"
+        } else {
+            "install_failed"
+        },
+        &format!(
+            "summary='{}' succeeded={} failed={} warnings={} reboot_required={}",
+            result.summary,
+            result.succeeded.len(),
+            result.failed.len(),
+            result.warnings.len(),
+            result.reboot_required
+        ),
+    );
+
+    refresh_pack_status(app, pack_id);
+
+    if success {
+        app.set_dev_item_selected(false);
+        app.set_dev_item_progress(100);
+        if app.get_dev_item_installed() {
+            app.set_dev_item_state(ITEM_STATE_INSTALLED);
+            app.set_dev_item_status_text("Installed".into());
+        }
+        set_task_progress(app, 100, "Complete");
+        app.set_last_action_text("Last action: Development Pack installation completed.".into());
+    } else {
+        app.set_dev_item_state(ITEM_STATE_FAILED);
+        app.set_dev_item_progress(100);
+        app.set_dev_item_status_text("Failed".into());
+        set_task_progress(app, 100, "Failed");
+        app.set_last_action_text(
+            "Last action: Development Pack installation completed with failures.".into(),
+        );
+    }
+}
+
+fn run_kate_uninstall(app: &AppWindow) {
+    app.set_install_state(3);
+    app.set_install_progress_current(1);
+    app.set_install_progress_total(3);
+    app.set_install_progress_message("Running guarded Kate uninstall.".into());
+
+    app.set_dev_item_state(ITEM_STATE_INSTALLING);
+    app.set_dev_item_progress(50);
+    app.set_dev_item_status_text("Removing".into());
+    set_task_progress(app, 50, "Removing Kate");
+    append_log_event(
+        "uninstall_started",
+        "Kate uninstall started directly from trash action",
+    );
+
+    let app_weak = app.as_weak();
+
+    thread::spawn(move || {
+        append_log_event(
+            "uninstall_worker_started",
+            "Kate uninstall command moved off the Slint event loop",
+        );
+
+        let result = build_kate_real_uninstall_result();
+
+        let dispatch = slint::invoke_from_event_loop(move || {
+            if let Some(app) = app_weak.upgrade() {
+                complete_kate_uninstall(&app, result);
+            } else {
+                append_log_event(
+                    "uninstall_worker_abandoned",
+                    "App window was closed before uninstall result could be applied",
+                );
+            }
+        });
+
+        if let Err(error) = dispatch {
+            append_log_event(
+                "uninstall_worker_dispatch_failed",
+                &format!("Failed to dispatch uninstall result to UI event loop: {error:?}"),
+            );
+        }
+    });
+}
+
+fn complete_kate_uninstall(app: &AppWindow, result: TransactionResult) {
+    let success = result.failed.is_empty();
+    let rendered_result = render_transaction_result(&result);
+
+    app.set_install_progress_current(3);
+    app.set_install_progress_message("Kate uninstall workflow completed.".into());
+    app.set_install_preview_text(rendered_result.clone().into());
+    app.set_install_state(if success { 4 } else { 5 });
+
+    append_log_event(
+        if success {
+            "uninstall_completed"
+        } else {
+            "uninstall_failed"
+        },
+        &format!(
+            "summary='{}' succeeded={} failed={} warnings={} reboot_required={}",
+            result.summary,
+            result.succeeded.len(),
+            result.failed.len(),
+            result.warnings.len(),
+            result.reboot_required
+        ),
+    );
+
+    refresh_pack_status(app, PackId::Development);
+
+    app.set_dev_item_progress(100);
+
+    if success {
+        app.set_dev_item_selected(false);
+        if !app.get_dev_item_installed() {
+            app.set_dev_item_state(ITEM_STATE_AVAILABLE);
+            app.set_dev_item_status_text("Available".into());
+            app.set_dev_item_progress(0);
+        }
+        set_task_progress(app, 100, "Uninstall complete");
+        app.set_last_action_text("Last action: Kate uninstall command completed.".into());
+    } else {
+        app.set_dev_item_state(ITEM_STATE_FAILED);
+        app.set_dev_item_status_text("Failed".into());
+        set_task_progress(app, 100, "Uninstall failed");
+        app.set_last_action_text("Last action: Kate uninstall command failed.".into());
+    }
 }
 
 fn refresh_pack_status(app: &AppWindow, pack_id: PackId) {
@@ -687,11 +824,16 @@ fn build_development_pack_refresh_result(current_selection: bool) -> PackRefresh
         .find(|tool| tool.name.eq_ignore_ascii_case("Kate"))
         .or_else(|| status.tools.first());
 
-    let item_installed = kate_status.map(|tool| tool.installed).unwrap_or(false);
-    let item_removable = kate_status.map(|tool| tool.removable).unwrap_or(false);
+    let detected_item_installed = kate_status.map(|tool| tool.installed).unwrap_or(false);
     let item_install_source = kate_status
         .map(|tool| tool.install_source)
         .unwrap_or(InstallSource::NotInstalled);
+
+    // Unknown source is not actionable enough for the v0.6.1 item-card state.
+    // The checkbox should not be disabled by stale or ambiguous detection. Only
+    // known install sources may mark the card installed.
+    let item_installed = detected_item_installed && item_install_source != InstallSource::Unknown;
+    let item_removable = item_installed;
     let item_selected = if item_installed {
         false
     } else {
@@ -705,10 +847,8 @@ fn build_development_pack_refresh_result(current_selection: bool) -> PackRefresh
         ITEM_STATE_AVAILABLE
     };
     let item_progress = if item_installed { 100 } else { 0 };
-    let item_status_text = if item_installed && item_removable {
+    let item_status_text = if item_installed {
         "Installed".to_string()
-    } else if item_installed {
-        "Managed".to_string()
     } else if item_selected {
         "Selected".to_string()
     } else {
@@ -783,7 +923,7 @@ fn apply_pack_refresh_result(app: &AppWindow, refresh_result: &PackRefreshResult
             append_log_event(
                 "pack_item_detection_decision",
                 &format!(
-                    "pack={} item=Kate installed={} selected={} state={} source={:?} removable={} metadata={} decision_detail={}",
+                    "pack={} item=Kate normalized_installed={} selected={} state={} source={:?} removable={} metadata={} decision_detail={}",
                     refresh_result.pack_id.display_name(),
                     refresh_result.item_installed,
                     refresh_result.item_selected,
@@ -798,7 +938,7 @@ fn apply_pack_refresh_result(app: &AppWindow, refresh_result: &PackRefreshResult
             append_log_event(
                 "development_refresh",
                 &format!(
-                    "installed={} selected={} state={} source={:?} removable={} metadata={} summary={} detection={}",
+                    "normalized_installed={} selected={} state={} source={:?} removable={} metadata={} summary={} detection={}",
                     refresh_result.item_installed,
                     refresh_result.item_selected,
                     refresh_result.item_state,
@@ -824,149 +964,52 @@ fn log_pack_item_detection_plan(pack_id: PackId, item_name: &str) {
     );
 }
 
-fn build_install_preview(pack_id: PackId) -> String {
-    let pack_result = load_first_available_pack(pack_id);
-
-    let Ok(pack) = pack_result else {
-        return format!("Unable to load {} manifest.", pack_id.display_name());
-    };
-
-    let install_plan = create_install_plan(&pack);
-    let execution_plan = create_execution_plan(&install_plan, true);
-
-    if execution_plan.steps.is_empty() {
-        return format!("No install steps required for {}.", pack_id.display_name());
-    }
-
-    let mut output = format!(
-        "Pack: {} ({})\nMode: {}\nBoundary allows commands: {}\n\n",
-        execution_plan.pack_name,
-        execution_plan.pack_id,
-        execution_plan.execution_mode.label(),
-        execution_plan.command_boundary.commands_allowed
-    );
-
-    output.push_str("Dry-run preview only. No system changes will be made.\n\n");
-
-    for step in execution_plan.steps {
-        output.push_str(&format!("{}\n{}\n\n", step.description, step.command));
-    }
-
-    output.push_str(&format!(
-        "Requires reboot: {}",
-        execution_plan.requires_reboot
-    ));
-
-    output
-}
-
-fn build_real_install_confirmation(pack_id: PackId) -> String {
-    let pack_result = load_first_available_pack(pack_id);
-
-    let Ok(pack) = pack_result else {
-        return format!("Unable to load {} manifest.", pack_id.display_name());
-    };
-
-    let install_plan = create_install_plan(&pack);
-    let execution_plan =
-        create_execution_plan_with_mode(&install_plan, ExecutionMode::RealExecution);
-
-    if execution_plan.steps.is_empty() {
-        return format!("No install steps required for {}.", pack_id.display_name());
-    }
-
-    let mut output = format!(
-        "Confirm Real Installation\n\nPack: {} ({})\nMode requested: {}\nBoundary currently allows commands: {}\n\n",
-        execution_plan.pack_name,
-        execution_plan.pack_id,
-        execution_plan.execution_mode.label(),
-        execution_plan.command_boundary.commands_allowed
-    );
-
-    output.push_str("Safety rule:\n");
-    output.push_str("ExecutionMode is intent. ExecutionBoundary is permission.\n\n");
-    output.push_str(
-        "Press Install only if you want Forge Welcome to enable the guarded Development Pack execution boundary and run the listed controlled commands.\n\n",
-    );
-
-    for step in execution_plan.steps {
-        output.push_str(&format!("{}\n{}\n\n", step.description, step.command));
-    }
-
-    output.push_str(&format!(
-        "Requires reboot: {}\n\nThis action may modify the system.",
-        execution_plan.requires_reboot
-    ));
-
-    output
-}
-
-fn build_dry_run_result(pack_id: PackId) -> String {
-    let result = build_transaction_result(pack_id, true);
-    render_transaction_result(&result)
-}
-
 fn build_real_install_result(pack_id: PackId) -> TransactionResult {
     match pack_id {
         PackId::Development => build_development_real_install_result(),
     }
 }
 
-fn build_transaction_result(pack_id: PackId, dry_run: bool) -> TransactionResult {
-    match pack_id {
-        PackId::Development => build_development_transaction_result(dry_run),
-    }
-}
-
-fn build_development_transaction_result(dry_run: bool) -> TransactionResult {
-    let status = detect_development_pack_status();
-
-    let mut succeeded = Vec::new();
-    let mut failed = Vec::new();
-    let mut warnings = Vec::new();
-
-    for tool in status.tools {
-        if tool.installed {
-            let detail = tool.version.unwrap_or_else(|| "Installed".to_string());
-
-            succeeded.push(TransactionItem {
-                name: tool.name,
-                detail,
-            });
-        } else {
-            failed.push(TransactionItem {
-                name: tool.name.clone(),
-                detail: "Missing".to_string(),
-            });
-
-            warnings.push(format!("{} is missing.", tool.name));
-        }
-    }
-
-    let total = succeeded.len() + failed.len();
-
+fn blocked_container_runtime_transaction_result(
+    pack_name: &str,
+    action: &str,
+) -> TransactionResult {
     TransactionResult {
-        pack_name: PackId::Development.display_name().to_string(),
-        dry_run,
+        pack_name: pack_name.to_string(),
         reboot_required: false,
         summary: format!(
-            "{} of {} development components are currently available.",
-            succeeded.len(),
-            total
+            "{action} was blocked because AshGrove Welcome is running inside forge-dev/container. Run the GUI from the host to modify host packages."
         ),
-        succeeded,
-        failed,
-        warnings,
+        succeeded: Vec::new(),
+        failed: vec![TransactionItem {
+            name: "Runtime environment".to_string(),
+            detail: "Container runtime detected. Package actions are disabled outside the host runtime to avoid reading or modifying the wrong package database."
+                .to_string(),
+        }],
+        warnings: vec![
+            "Build validation may run in forge-dev, but GUI package detection and package actions must run from the host."
+                .to_string(),
+        ],
     }
 }
 
 fn build_development_real_install_result() -> TransactionResult {
+    if is_container_runtime() {
+        append_log_event(
+            "runtime_action_blocked",
+            "action='Kate installation' blocked before command execution because container runtime was detected",
+        );
+        return blocked_container_runtime_transaction_result(
+            PackId::Development.display_name(),
+            "Kate installation",
+        );
+    }
+
     let pack_result = load_first_available_pack(PackId::Development);
 
     let Ok(pack) = pack_result else {
         return TransactionResult {
             pack_name: PackId::Development.display_name().to_string(),
-            dry_run: false,
             reboot_required: false,
             summary: "Unable to load Development Pack manifest. Installation was not started."
                 .to_string(),
@@ -989,7 +1032,6 @@ fn build_development_real_install_result() -> TransactionResult {
 fn transaction_result_from_execution_report(report: ExecutionReport) -> TransactionResult {
     let mut transaction_result = TransactionResult {
         pack_name: report.pack_name.clone(),
-        dry_run: report.dry_run,
         reboot_required: report.requires_reboot,
         summary: build_transaction_summary(&report),
         succeeded: Vec::new(),
@@ -1053,10 +1095,13 @@ fn append_workflow_notes(report: &ExecutionReport, transaction_result: &mut Tran
             name: "Execution boundary".to_string(),
             detail: report.command_boundary.safety_note.clone(),
         }),
+        ExecutionWorkflowStatus::DryRun => transaction_result.warnings.push(
+            "Legacy dry-run workflow status was reported. Direct install workflow does not intentionally route through dry-run mode."
+                .to_string(),
+        ),
         ExecutionWorkflowStatus::SucceededWithWarnings
         | ExecutionWorkflowStatus::Succeeded
         | ExecutionWorkflowStatus::Planned
-        | ExecutionWorkflowStatus::DryRun
         | ExecutionWorkflowStatus::Failed => {}
     }
 
@@ -1141,15 +1186,10 @@ fn render_transaction_result(result: &TransactionResult) -> String {
     output.push_str(&format!("{} Transaction Results\n\n", result.pack_name));
     let is_uninstall = result.pack_name.to_lowercase().contains("uninstall");
 
-    if result.dry_run {
-        output.push_str("Mode: Dry Run\n");
-        output.push_str("No system changes were made.\n\n");
+    if is_uninstall {
+        output.push_str("Mode: Real Uninstall\n\n");
     } else {
-        if is_uninstall {
-            output.push_str("Mode: Real Uninstall\n\n");
-        } else {
-            output.push_str("Mode: Real Installation\n\n");
-        }
+        output.push_str("Mode: Real Installation\n\n");
     }
 
     output.push_str("Summary\n");
@@ -1203,10 +1243,7 @@ fn render_transaction_result(result: &TransactionResult) -> String {
     output.push_str("Result\n");
     output.push_str("────────────────────────────\n\n");
 
-    if result.dry_run {
-        output.push_str("Dry-run completed successfully.\n");
-        output.push_str("Installation execution was not performed.");
-    } else if result.failed.is_empty() && result.reboot_required && is_uninstall {
+    if result.failed.is_empty() && result.reboot_required && is_uninstall {
         output.push_str("Uninstall transaction completed successfully. Reboot is required before all changes are fully applied.");
     } else if result.failed.is_empty() && result.reboot_required {
         output.push_str("Installation transaction completed successfully. Reboot is required before all changes are active.");
@@ -1230,74 +1267,15 @@ fn current_kate_tool_status() -> Option<DevelopmentToolStatus> {
         .find(|tool| tool.name.eq_ignore_ascii_case("Kate"))
 }
 
-fn build_kate_uninstall_confirmation(source: InstallSource) -> String {
-    let Some((description, command_spec, requires_reboot)) = kate_uninstall_command(source) else {
-        return format!(
-            "Kate is installed from {}.\n\nThis source is not removable through AshGrove Welcome yet.",
-            source.label()
-        );
-    };
-
-    let mut output = String::new();
-    output.push_str("Confirm Kate Uninstall\n\n");
-    output.push_str(&format!("Detected source: {}\n", source.label()));
-    output.push_str(&format!("Action: {}\n", description));
-    output.push_str(&format!("Command: {}\n", command_spec.display_command()));
-    output.push_str(&format!("Requires reboot: {}\n\n", requires_reboot));
-    output.push_str("Safety rule:\n");
-    output.push_str("ExecutionMode is intent. ExecutionBoundary is permission.\n\n");
-    output.push_str(
-        "Press Install in this temporary confirmation dialog only if you want AshGrove Welcome to run the guarded uninstall command for Kate.\n",
-    );
-
-    output
-}
-
-fn handle_kate_uninstall_confirmation(app: &AppWindow, state: i32) {
-    match state {
-        2 => {
-            app.set_install_state(3);
-            app.set_install_progress_current(1);
-            app.set_install_progress_total(3);
-            app.set_install_progress_message("Running guarded Kate uninstall.".into());
-            app.set_dev_item_state(ITEM_STATE_INSTALLING);
-            app.set_dev_item_progress(50);
-            app.set_dev_item_status_text("Removing".into());
-            set_task_progress(app, 50, "Removing Kate");
-
-            let result = build_kate_real_uninstall_result();
-            let success = result.failed.is_empty();
-            let rendered_result = render_transaction_result(&result);
-
-            app.set_install_progress_current(3);
-            app.set_install_progress_message("Kate uninstall workflow completed.".into());
-            app.set_install_preview_text(rendered_result.into());
-            app.set_install_state(if success { 4 } else { 5 });
-            app.set_dev_item_progress(100);
-
-            if success {
-                set_task_progress(app, 100, "Uninstall complete");
-                app.set_last_action_text("Last action: Kate uninstall command completed.".into());
-                append_log_event("uninstall_completed", "Kate uninstall command completed");
-            } else {
-                app.set_dev_item_state(ITEM_STATE_FAILED);
-                app.set_dev_item_status_text("Failed".into());
-                set_task_progress(app, 100, "Uninstall failed");
-                app.set_last_action_text("Last action: Kate uninstall command failed.".into());
-                append_log_event("uninstall_failed", "Kate uninstall command failed");
-            }
-
-            refresh_pack_status(app, PackId::Development);
-        }
-        _ => {
-            app.set_show_install_dialog(false);
-            refresh_pack_status(app, PackId::Development);
-            reset_task_progress(app);
-        }
-    }
-}
-
 fn build_kate_real_uninstall_result() -> TransactionResult {
+    if is_container_runtime() {
+        append_log_event(
+            "runtime_action_blocked",
+            "action='Kate uninstall' blocked before command execution because container runtime was detected",
+        );
+        return blocked_container_runtime_transaction_result("Kate Uninstall", "Kate uninstall");
+    }
+
     let Some(kate_status) = current_kate_tool_status() else {
         return failed_uninstall_result("Kate status", "Unable to determine Kate install source.");
     };
@@ -1334,7 +1312,6 @@ fn build_kate_real_uninstall_result() -> TransactionResult {
 fn failed_uninstall_result(name: &str, detail: &str) -> TransactionResult {
     TransactionResult {
         pack_name: "Kate Uninstall".to_string(),
-        dry_run: false,
         reboot_required: false,
         summary: detail.to_string(),
         succeeded: Vec::new(),
@@ -1375,7 +1352,8 @@ fn kate_uninstall_command(source: InstallSource) -> Option<(String, CommandSpec,
     match source {
         InstallSource::HostOstreeLayered => Some((
             "Uninstall Kate host layered package".to_string(),
-            CommandSpec::new("rpm-ostree", ["uninstall", KATE_PACKAGE_NAME]),
+            CommandSpec::new("rpm-ostree", ["uninstall", KATE_PACKAGE_NAME])
+                .with_terminal_interaction(),
             true,
         )),
         InstallSource::FlatpakSystem => Some((

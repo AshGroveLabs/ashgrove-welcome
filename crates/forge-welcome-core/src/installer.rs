@@ -1082,7 +1082,7 @@ fn build_package_install_step(
                     packages.len(),
                     package_label
                 ),
-                CommandSpec::new("rpm-ostree", args),
+                CommandSpec::new("rpm-ostree", args).with_terminal_interaction(),
             )
         }
         PackageInstallStrategy::Flatpak => {
