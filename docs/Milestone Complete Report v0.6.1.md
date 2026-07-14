@@ -7,12 +7,11 @@
 | Project | AshGrove Welcome |
 | Completed roadmap milestone | `v0.6.1 — Inline Pack Install Workflow` |
 | Initial implementation revision | `v0.6.1.0` |
-| Final accepted revision | `v0.6.1.9` |
-| Number of fix revisions | `9` |
-| Final validation artifact | `ashgrove_welcome_v0.6.1.9.zip` |
-| Build result | Passed by user validation |
-| Validation result | Passed |
-| Code-review result | Ready |
+| Final accepted revision | `v0.6.1.12` |
+| Corrective revision chain | `v0.6.1.9` → `v0.6.1.10` → `v0.6.1.11` → `v0.6.1.12` |
+| Manual validation | Full host GUI install/remove/reboot lifecycle passed |
+| Code-review result | APPROVED WITH NON-BLOCKING NOTES |
+| Handoff-review result | APPROVED WITH NON-BLOCKING DEFERRALS |
 | Git commit | Pending |
 | Git push state | Pending |
 | Next planned milestone | `v0.6.2 — Task Progress and Logging` |
@@ -31,6 +30,10 @@
 
 ## Validation Evidence
 
+Detailed implementation, review, walkthrough, and validation evidence is retained in the private AshGrove milestone evidence archive. The public repository records the accepted milestone outcome, final behavior, closed findings, non-blocking deferrals, and release-facing documentation.
+
+Automated validation was completed across the corrective chain. Manual host GUI validation passed the full install/remove/reboot lifecycle, the corrected walkthrough reviewed the actual Rust and Slint changes, and the handoff accepted `v0.6.1.12` as the final revision.
+
 User confirmed:
 
 - Kate installation passed.
@@ -44,7 +47,11 @@ User confirmed:
 
 ## Code Review Result
 
-Ready for milestone completion.
+CODE REVIEW `v0.6.1.12` was **APPROVED WITH NON-BLOCKING NOTES**. The corrected CODE CHANGE WALKTHROUGH was accepted 16/16, and MILESTONE HANDOFF REVIEW approved `v0.6.1.12` as final.
+
+Closed findings: `F-001`, `F-002`, `F-003`, and `F-004`.
+
+Non-blocking deferrals: missing or incomplete revision-specific automated-validation documentation, manual-validation record hygiene, and rpm-ostree detection/parser technical debt.
 
 ## Git Commit Message
 
@@ -76,10 +83,11 @@ This milestone completes the first validated direct inline install/uninstall wor
 - Added rpm-ostree active/pending state handling.
 - Preserved Kate-only validation scope and safety gates.
 
-Final accepted implementation revision: v0.6.1.9
-Validation artifact: ashgrove_welcome_v0.6.1.9.zip
+Final accepted implementation revision: v0.6.1.12
 ```
 
 ## Next Sprint
 
 `v0.6.2 — Task Progress and Logging`
+
+Do not start v0.6.2 until commit/push and source refresh are complete.

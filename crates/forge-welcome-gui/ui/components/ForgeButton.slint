@@ -2,6 +2,7 @@ export component ForgeButton inherits Rectangle {
     in property <string> icon;
     in property <string> label;
     in property <bool> primary: false;
+    in property <bool> enabled: true;
 
     callback clicked;
 
@@ -10,10 +11,11 @@ export component ForgeButton inherits Rectangle {
 
     border-radius: 8px;
     border-width: 2px;
-    border-color: primary ? #ff7a18 : #777777;
-    background: primary ? #18120fdd : #181818cc;
+    border-color: !enabled ? #555555 : primary ? #ff7a18 : #777777;
+    background: !enabled ? #18181888 : primary ? #18120fdd : #181818cc;
 
     TouchArea {
+        enabled: root.enabled;
         clicked => {
             root.clicked();
         }
@@ -26,14 +28,14 @@ export component ForgeButton inherits Rectangle {
 
         Text {
             text: root.icon;
-            color: root.primary ? #ff7a18 : #ffffff;
+            color: !root.enabled ? #777777 : root.primary ? #ff7a18 : #ffffff;
             font-size: 30px;
             vertical-alignment: center;
         }
 
         Text {
             text: root.label;
-            color: root.primary ? #ff7a18 : #ffffff;
+            color: !root.enabled ? #777777 : root.primary ? #ff7a18 : #ffffff;
             font-size: 20px;
             font-weight: 700;
             vertical-alignment: center;
@@ -42,7 +44,7 @@ export component ForgeButton inherits Rectangle {
 
     if root.icon == "": Text {
         text: root.label;
-        color: root.primary ? #ff7a18 : #ffffff;
+        color: !root.enabled ? #777777 : root.primary ? #ff7a18 : #ffffff;
         font-size: 20px;
         font-weight: 700;
 

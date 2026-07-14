@@ -741,6 +741,7 @@ pub fn create_execution_plan_with_mode(
 ) -> ExecutionPlan {
     let runtime_environment = detect_runtime_install_environment();
     let steps = build_execution_steps_for_environment(plan, runtime_environment);
+    let requires_reboot = execution_steps_require_reboot(plan, &steps);
 
     ExecutionPlan {
         pack_id: plan.pack_id.clone(),
@@ -749,8 +750,15 @@ pub fn create_execution_plan_with_mode(
         execution_mode,
         command_boundary: ExecutionBoundary::for_mode(execution_mode),
         steps,
-        requires_reboot: plan.requires_reboot,
+        requires_reboot,
     }
+}
+
+fn execution_steps_require_reboot(plan: &InstallPlan, steps: &[ExecutionStep]) -> bool {
+    plan.requires_reboot
+        || steps
+            .iter()
+            .any(|step| step.command_spec.program == "rpm-ostree")
 }
 
 pub fn create_confirmed_development_execution_plan(
@@ -1427,6 +1435,22 @@ mod tests {
             vec!["install".to_string(), "kate".to_string()]
         );
         assert_eq!(steps[0].command, "rpm-ostree install kate");
+        assert!(steps[0].command_spec.requires_terminal_interaction);
+    }
+
+    #[test]
+    fn rpm_ostree_execution_plan_preserves_reboot_requirement() {
+        let plan = InstallPlan {
+            pack_id: "development".to_string(),
+            pack_name: "Development Pack".to_string(),
+            host_packages: vec!["kate".to_string()],
+            flatpaks: Vec::new(),
+            distrobox_packages: Vec::new(),
+            requires_reboot: false,
+        };
+
+        let steps = build_execution_steps_for_environment(&plan, RuntimeInstallEnvironment::Host);
+        assert!(execution_steps_require_reboot(&plan, &steps));
     }
 
     #[test]

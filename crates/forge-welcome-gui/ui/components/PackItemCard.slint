@@ -10,6 +10,7 @@ export component PackItemCard inherits Rectangle {
     in property <string> description: "Application description";
     in property <string> metadata: "Package metadata";
     in property <string> status-text: "Available";
+    in property <bool> actions-enabled: true;
 
     callback toggled;
     callback remove-requested;
@@ -50,7 +51,7 @@ export component PackItemCard inherits Rectangle {
             height: parent.height;
 
             clicked => {
-                if !root.installed && root.item-state != 3 {
+                if root.actions-enabled && !root.installed && root.item-state != 3 {
                     root.toggled();
                 }
             }
@@ -164,7 +165,7 @@ export component PackItemCard inherits Rectangle {
         }
     }
 
-    if !root.installed && root.item-state != 3: TouchArea {
+    if root.actions-enabled && !root.installed && root.item-state != 3: TouchArea {
         width: parent.width;
         height: parent.height;
 
@@ -200,8 +201,33 @@ export component PackItemCard inherits Rectangle {
         }
     }
 
-    // Installed applications always show the per-application remove action.
-    if root.item-state != 3 && root.item-state != 5 && root.installed: Rectangle {
+    if root.item-state != 3 && root.item-state != 5 && root.installed && !root.removable: Rectangle {
+        x: parent.width - 154px;
+        y: 55px;
+        width: 114px;
+        height: 38px;
+        border-radius: 19px;
+        background: #232323;
+        border-width: 1px;
+        border-color: #555555;
+
+        Text {
+            text: root.status-text;
+            x: 12px;
+            y: 0px;
+            width: parent.width - 24px;
+            height: parent.height;
+            color: #bdbdbd;
+            font-size: 13px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    // Only supported, source-aware installed applications expose removal.
+    if root.actions-enabled && root.item-state != 3 && root.item-state != 5 && root.installed && root.removable: Rectangle {
         x: parent.width - 106px;
         y: 50px;
         width: 54px;
@@ -227,7 +253,9 @@ export component PackItemCard inherits Rectangle {
             width: parent.width;
             height: parent.height;
             clicked => {
-                root.remove-requested();
+                if root.actions-enabled && root.removable {
+                    root.remove-requested();
+                }
             }
         }
     }

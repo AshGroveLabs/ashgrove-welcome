@@ -1,5 +1,5 @@
 ---
-modified: 2026-07-10
+modified: 2026-07-14
 type: master-knowledge-base
 project: AshGrove Welcome
 status: active
@@ -18,7 +18,7 @@ active_roadmap_milestone: v0.6.2 — Task Progress and Logging
 | Internal crate names | `forge-welcome-*` |
 | Repository | `https://github.com/AshGroveLabs/ashgrove-welcome` |
 | Last completed milestone | `v0.6.1 — Inline Pack Install Workflow` |
-| Final accepted revision | `v0.6.1.9` |
+| Final accepted revision | `v0.6.1.12` |
 | Active roadmap milestone | `v0.6.2 — Task Progress and Logging` |
 
 ## Versioning Knowledge
@@ -35,7 +35,7 @@ Implementation revisions use four-part versions:
 ```text
 v0.6.1.0
 v0.6.1.1
-v0.6.1.9
+v0.6.1.12
 ```
 
 Rules:

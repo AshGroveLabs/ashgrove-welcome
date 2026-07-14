@@ -6,6 +6,7 @@ import { PlaceholderPage } from "pages/PlaceholderPage.slint";
 export component AppWindow inherits Window {
     in-out property <int> selected-page: 0;
     in-out property <int> install-state: 0;
+    in-out property <bool> operation-active: false;
 
     in-out property <bool> dev-item-selected: false;
     in-out property <bool> dev-item-installed: false;
@@ -16,6 +17,7 @@ export component AppWindow inherits Window {
     in-out property <string> dev-item-metadata: "Host application · kate · Development Pack validation item";
     in-out property <bool> dev-item-has-icon-image: false;
     in-out property <image> dev-item-icon-image;
+    in-out property <int> dev-scheduled-update-kind: 0;
 
     in-out property <bool> task-progress-active: false;
     in-out property <int> task-progress-percent: 0;
@@ -73,6 +75,8 @@ export component AppWindow inherits Window {
             dev-item-metadata: root.dev-item-metadata;
             dev-item-has-icon-image: root.dev-item-has-icon-image;
             dev-item-icon-image: root.dev-item-icon-image;
+            actions-enabled: !root.operation-active;
+            scheduled-update-kind: root.dev-scheduled-update-kind;
 
             toggle-development-item => {
                 root.toggle-development-item-selection();

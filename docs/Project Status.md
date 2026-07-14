@@ -1,5 +1,5 @@
 ---
-modified: 2026-07-10
+modified: 2026-07-14
 type: project-status
 project: AshGrove Welcome
 legacy_project_name: Forge Welcome
@@ -7,7 +7,7 @@ status: active
 last_completed_milestone: v0.6.1 — Inline Pack Install Workflow
 active_roadmap_milestone: v0.6.2 — Task Progress and Logging
 current_implementation_revision: Not created
-latest_validation_artifact: ashgrove_welcome_v0.6.1.9.zip
+final_accepted_revision: v0.6.1.12
 workflow_state: Milestone complete; Git commit and push pending
 ---
 
@@ -18,9 +18,9 @@ workflow_state: Milestone complete; Git commit and push pending
 - Last completed milestone: `v0.6.1 — Inline Pack Install Workflow`
 - Active roadmap milestone: `v0.6.2 — Task Progress and Logging`
 - Current implementation revision: `Not created`
-- Latest validation artifact: `ashgrove_welcome_v0.6.1.9.zip`
+- Final accepted revision: `v0.6.1.12`
 - Current workflow state: `Milestone complete; Git commit and push pending`
-- Next action: `Commit and push v0.6.1, then begin PROJECT STATUS for v0.6.2`
+- Next legal workflow action: `COMMIT / PUSH`
 
 ## Project Dashboard
 
@@ -32,23 +32,22 @@ workflow_state: Milestone complete; Git commit and push pending
 | Repository visibility | Public |
 | Last completed roadmap milestone | `v0.6.1 — Inline Pack Install Workflow` |
 | Initial implementation revision | `v0.6.1.0` |
-| Final accepted revision | `v0.6.1.9` |
-| Number of fix revisions | `9` |
-| Final validation artifact | `ashgrove_welcome_v0.6.1.9.zip` |
-| Build result | Passed by user validation |
-| Validation result | Passed |
-| Code-review result | Ready |
+| Final accepted revision | `v0.6.1.12` |
+| Corrective revision chain | `v0.6.1.9` through `v0.6.1.12` |
+| Manual host GUI validation | Passed: full install/remove/reboot lifecycle |
+| Code-review result | APPROVED WITH NON-BLOCKING NOTES |
+| Handoff-review result | APPROVED WITH NON-BLOCKING DEFERRALS |
 | Current active roadmap milestone | `v0.6.2 — Task Progress and Logging` |
 | Current implementation revision | `Not created` |
 | Git commit state | Pending |
 | Git push state | Pending |
-| Last updated | 2026-07-10 |
+| Last updated | 2026-07-14 |
 
 ## Executive Summary
 
 `v0.6.1 — Inline Pack Install Workflow` is complete.
 
-The milestone delivered a direct inline install and uninstall workflow for the Development Pack Kate validation item. The final accepted implementation revision is `v0.6.1.9`.
+The milestone delivered a direct inline install and uninstall workflow for the Development Pack Kate validation item. The final accepted implementation revision is `v0.6.1.12`, approved by MILESTONE HANDOFF REVIEW. CODE REVIEW returned **APPROVED WITH NON-BLOCKING NOTES**, and the corrected CODE CHANGE WALKTHROUGH was accepted.
 
 The validated behavior includes:
 
@@ -70,8 +69,10 @@ The validated behavior includes:
 - Name: Inline Pack Install Workflow
 - Status: Complete
 - Initial implementation revision: `v0.6.1.0`
-- Final accepted revision: `v0.6.1.9`
-- Final validation artifact: `ashgrove_welcome_v0.6.1.9.zip`
+- Final accepted revision: `v0.6.1.12`
+- Manual validation: Full host GUI install/remove/reboot lifecycle passed
+- Closed findings: `F-001` through `F-004`
+- Accepted reboot-required behavior: the Kate card is replaced by the non-actionable **System Update Scheduled** card for scheduled rpm-ostree install/removal states
 
 ### Completed Scope
 
@@ -103,7 +104,7 @@ Improve task progress, logging, and workflow diagnostics now that the inline ins
 |---|---|---|
 | Architecture | Healthy | v0.6.1 inline workflow is validated. |
 | Code quality | Acceptable | `main.rs` grew substantially; extraction should be considered later. |
-| Build health | Passed by validation | Record final validation artifact as `ashgrove_welcome_v0.6.1.9.zip`. |
+| Build health | Accepted evidence chain | Revision-specific automated-validation documentation remains a non-blocking deferral. |
 | Test health | Needs attention | Add regression tests for detection states and workflow gating when practical. |
 | Documentation | Updated in this closeout | Commit and push pending. |
 | Safety | Healthy | Container action guard and execution boundary rules preserved. |
@@ -133,6 +134,8 @@ git commit -m "Milestone v0.6.1: Inline pack install workflow"
 ## Next Development Session
 
 Before continuing to `v0.6.2`, commit and push the completed `v0.6.1` source and documentation changes.
+
+Do not start `v0.6.2` until commit/push and source refresh are complete.
 
 Next planned command loop:
 

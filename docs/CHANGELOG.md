@@ -75,12 +75,27 @@ Roadmap milestones use three-part versions. Implementation revisions use four-pa
 - Validated checkbox disabled and red trash can visible after Kate installation.
 - Validated red trash action removes Kate only.
 
+### v0.6.1.10
+
+- Closed F-001 through F-004: concurrent transaction prevention, safe pending rpm-ostree state, fail-closed Unknown presentation, and removability-aware UI behavior.
+
+### v0.6.1.11
+
+- Added the **System Update Scheduled** presentation for reboot-required rpm-ostree install/removal operations.
+
+### v0.6.1.12
+
+- Corrected scheduled-card replacement timing.
+- Passed manual host GUI validation for the full install/remove/reboot lifecycle.
+- Accepted the corrected code change walkthrough and received MILESTONE HANDOFF REVIEW approval.
+
 ### Final Validation
 
-- Final accepted revision: `v0.6.1.9`
-- Final validation artifact: `ashgrove_welcome_v0.6.1.9.zip`
+- Final accepted revision: `v0.6.1.12`
 - Validation result: Passed
-- Code review result: Ready
+- Code review result: APPROVED WITH NON-BLOCKING NOTES
+- Handoff review result: APPROVED WITH NON-BLOCKING DEFERRALS
+- Non-blocking deferrals: revision-specific automated-validation documentation, manual-validation record hygiene, and rpm-ostree detection/parser technical debt
 
 ## v0.6.0 — Production UI/UX Foundation
 

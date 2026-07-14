@@ -1,5 +1,5 @@
 ---
-modified: 2026-07-10
+modified: 2026-07-14
 type: architecture
 project: AshGrove Welcome
 status: active
@@ -14,7 +14,7 @@ active_roadmap_milestone: v0.6.2 — Task Progress and Logging
 | Area | State |
 |---|---|
 | Last completed milestone | `v0.6.1 — Inline Pack Install Workflow` |
-| Final accepted revision | `v0.6.1.9` |
+| Final accepted revision | `v0.6.1.12` |
 | Active next milestone | `v0.6.2 — Task Progress and Logging` |
 | GUI framework | Slint |
 | Language | Rust |
@@ -119,6 +119,9 @@ v0.6.2 should strengthen logs for:
 6. Do not log secrets, tokens, passwords, or full environment dumps.
 
 ## Technical Debt
+
+- The accepted rpm-ostree reboot-required UI replaces the normal Kate card with a non-actionable **System Update Scheduled** card until reboot.
+- Hand-written rpm-ostree detection/parsing remains a non-blocking deferral from `v0.6.1.12`.
 
 - GUI `main.rs` now carries substantial workflow orchestration.
 - v0.6.2 should improve logging/progress without a broad rewrite.

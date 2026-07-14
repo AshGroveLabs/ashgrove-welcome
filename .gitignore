@@ -16,3 +16,8 @@ forge-welcome-symbol-search.txt
 
 # Logs
 *.log
+
+# AshGrove internal milestone evidence
+docs/implementation/
+docs/reviews/
+docs/validation/

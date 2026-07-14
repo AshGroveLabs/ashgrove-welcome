@@ -1,12 +1,12 @@
 ---
-modified: 2026-07-10
+modified: 2026-07-14
 type: current-sprint
 project: AshGrove Welcome
 legacy_project_name: Forge Welcome
 status: planned
 active_roadmap_milestone: v0.6.2 — Task Progress and Logging
 current_implementation_revision: Not created
-latest_validation_artifact: ashgrove_welcome_v0.6.1.9.zip
+final_accepted_revision: v0.6.1.12
 workflow_state: Milestone complete; Git commit and push pending
 ---
 
@@ -18,10 +18,10 @@ workflow_state: Milestone complete; Git commit and push pending
 - Active roadmap milestone: `v0.6.2 — Task Progress and Logging`
 - Current implementation revision: `Not created`
 - Current workflow stage: `Milestone complete; Git commit and push pending`
-- Current validation result: `v0.6.1.9 passed`
-- Blocking defects: None known for `v0.6.1.9`
-- Latest artifact: `ashgrove_welcome_v0.6.1.9.zip`
-- Next action: `Commit and push v0.6.1, then start v0.6.2`
+- Current validation result: `v0.6.1.12 full host GUI lifecycle passed`
+- Blocking defects: `F-001` through `F-004` closed; none remaining
+- Handoff result: `APPROVED WITH NON-BLOCKING DEFERRALS`
+- Next legal workflow action: `COMMIT / PUSH`
 
 ## Sprint Dashboard
 
@@ -29,7 +29,7 @@ workflow_state: Milestone complete; Git commit and push pending
 |---|---|
 | Project | AshGrove Welcome |
 | Last completed milestone | `v0.6.1 — Inline Pack Install Workflow` |
-| Final accepted revision | `v0.6.1.9` |
+| Final accepted revision | `v0.6.1.12` |
 | Active roadmap milestone | `v0.6.2 — Task Progress and Logging` |
 | Current implementation revision | `Not created` |
 | Sprint | `v0.6.2 Sprint 1 — Task Progress and Logging Foundation` |
@@ -51,6 +51,9 @@ Validated behavior:
 - Checkbox disabled after Kate installation.
 - Red trash can displayed after Kate installation.
 - Red trash can removed Kate successfully.
+- Scheduled rpm-ostree installation/removal replaces Kate with the non-actionable **System Update Scheduled** card, identifies the operation, requires reboot, and reaches 100% task progress.
+
+The corrected CODE CHANGE WALKTHROUGH `v0.6.1.12` was accepted. Remaining non-blocking deferrals are revision-specific automated-validation documentation, manual-validation record hygiene, and rpm-ostree detection/parser technical debt.
 
 # Next Sprint
 
@@ -102,3 +105,5 @@ test -f /run/.containerenv && echo "container - stop" && exit 1 || echo "host - 
 ### Current Blocker
 
 Commit and push `v0.6.1` before starting implementation on `v0.6.2`.
+
+Source refresh must also be complete before `v0.6.2` starts.

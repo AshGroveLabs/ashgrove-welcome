@@ -63,6 +63,8 @@ impl DetectionProbeLogEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallSource {
     NotInstalled,
+    PendingOstreeInstall,
+    PendingOstreeRemoval,
     HostOstreeLayered,
     HostBaseImage,
     FlatpakSystem,
@@ -72,7 +74,14 @@ pub enum InstallSource {
 
 impl InstallSource {
     pub fn is_installed(self) -> bool {
-        !matches!(self, Self::NotInstalled)
+        !matches!(self, Self::NotInstalled | Self::PendingOstreeInstall)
+    }
+
+    pub fn is_pending_reboot(self) -> bool {
+        matches!(
+            self,
+            Self::PendingOstreeInstall | Self::PendingOstreeRemoval
+        )
     }
 
     pub fn is_removable(self) -> bool {
@@ -85,6 +94,8 @@ impl InstallSource {
     pub fn label(self) -> &'static str {
         match self {
             Self::NotInstalled => "Not installed",
+            Self::PendingOstreeInstall => "Pending rpm-ostree installation",
+            Self::PendingOstreeRemoval => "Pending rpm-ostree removal",
             Self::HostOstreeLayered => "Host rpm-ostree layered package",
             Self::HostBaseImage => "Host base image package",
             Self::FlatpakSystem => "System Flatpak",
@@ -96,6 +107,10 @@ impl InstallSource {
     pub fn ui_metadata(self) -> &'static str {
         match self {
             Self::NotInstalled => "Host application · kate · Development Pack validation item",
+            Self::PendingOstreeInstall => {
+                "Kate installation staged by rpm-ostree · reboot required"
+            }
+            Self::PendingOstreeRemoval => "Kate removal staged by rpm-ostree · reboot required",
             Self::HostOstreeLayered => "Installed via host rpm-ostree layered package · removable",
             Self::HostBaseImage => "Installed in host base image · OS-owned package",
             Self::FlatpakSystem => "Installed via system Flatpak · removable",
@@ -212,8 +227,7 @@ fn build_kate_status(
         name: DEVELOPMENT_VALIDATION_TOOL_NAME.to_string(),
         command: DEVELOPMENT_VALIDATION_TOOL_COMMAND.to_string(),
         installed: install_source.is_installed(),
-        version: install_source
-            .is_installed()
+        version: (install_source.is_installed() || install_source.is_pending_reboot())
             .then(|| install_source.ui_metadata().to_string()),
         removable: install_source.is_removable(),
         install_source,
@@ -265,11 +279,34 @@ fn detect_kate_install_source_with_detail() -> (InstallSource, String, Vec<Detec
     }
 
     let current_runtime_has_kate = rpm_probe.success && executable_probe.success;
+    let staged_deployment = ostree_host
+        .then(|| extract_deployment_object_with_true_key(&json_probe.stdout, "staged"))
+        .flatten();
+    let staged_mentions_kate = staged_deployment.as_deref().is_some_and(|deployment| {
+        rpm_ostree_deployment_mentions_package(deployment, KATE_PACKAGE_NAME)
+    });
+    let booted_mentions_kate = ostree_host
+        && rpm_ostree_current_json_deployment_mentions_package(
+            &json_probe.stdout,
+            KATE_PACKAGE_NAME,
+        );
 
     // Guard against stale rpm-ostree deployment evidence. The app must not show
     // Kate as installed unless the current runtime can also prove that the Kate
     // RPM package exists and the Kate executable is available on PATH.
     if !current_runtime_has_kate {
+        if staged_mentions_kate {
+            details.push(
+                "decision=PendingOstreeInstall via staged non-booted rpm-ostree deployment"
+                    .to_string(),
+            );
+            return (
+                InstallSource::PendingOstreeInstall,
+                details.join(" | "),
+                probe_log,
+            );
+        }
+
         if rpm_probe.success && !executable_probe.success {
             details.push(
                 "rpm_query_kate succeeded, but the kate executable was not found on PATH; treating Kate as NotInstalled"
@@ -289,6 +326,18 @@ fn detect_kate_install_source_with_detail() -> (InstallSource, String, Vec<Detec
         probe_log.push(DetectionProbeLogEntry::not_installed_fallback(7));
         details.push("decision=NotInstalled current_runtime_has_kate=false".to_string());
         return (InstallSource::NotInstalled, details.join(" | "), probe_log);
+    }
+
+    if staged_deployment.is_some() && booted_mentions_kate && !staged_mentions_kate {
+        details.push(
+            "decision=PendingOstreeRemoval via Kate present in booted deployment and absent from staged deployment"
+                .to_string(),
+        );
+        return (
+            InstallSource::PendingOstreeRemoval,
+            details.join(" | "),
+            probe_log,
+        );
     }
 
     if ostree_host
@@ -343,6 +392,21 @@ fn rpm_ostree_any_deployment_mentions_package(output: &str, package_name: &str) 
         || json_array_contains_string(output, "base-layered-packages", package_name)
 }
 
+#[cfg(test)]
+fn rpm_ostree_staged_deployment_mentions_package(output: &str, package_name: &str) -> bool {
+    let Some(deployment) = extract_deployment_object_with_true_key(output, "staged") else {
+        return false;
+    };
+
+    rpm_ostree_deployment_mentions_package(&deployment, package_name)
+}
+
+fn rpm_ostree_deployment_mentions_package(deployment: &str, package_name: &str) -> bool {
+    json_array_contains_string(deployment, "requested-packages", package_name)
+        || json_array_contains_string(&deployment, "requested-local-packages", package_name)
+        || json_array_contains_string(&deployment, "base-layered-packages", package_name)
+}
+
 fn rpm_ostree_current_json_deployment_mentions_package(output: &str, package_name: &str) -> bool {
     let Some(deployment) = extract_booted_deployment_object(output) else {
         return false;
@@ -354,7 +418,13 @@ fn rpm_ostree_current_json_deployment_mentions_package(output: &str, package_nam
 }
 
 fn extract_booted_deployment_object(json_text: &str) -> Option<String> {
-    for (key_start, _) in json_text.match_indices("\"booted\"") {
+    extract_deployment_object_with_true_key(json_text, "booted")
+}
+
+fn extract_deployment_object_with_true_key(json_text: &str, key: &str) -> Option<String> {
+    let key_pattern = format!("\"{key}\"");
+
+    for (key_start, _) in json_text.match_indices(&key_pattern) {
         if !json_bool_key_is_true(&json_text[key_start..]) {
             continue;
         }
@@ -528,6 +598,8 @@ mod tests {
         assert!(!InstallSource::HostBaseImage.is_removable());
         assert!(!InstallSource::Unknown.is_removable());
         assert!(!InstallSource::NotInstalled.is_removable());
+        assert!(!InstallSource::PendingOstreeInstall.is_removable());
+        assert!(!InstallSource::PendingOstreeRemoval.is_removable());
     }
 
     #[test]
@@ -627,6 +699,47 @@ mod tests {
         assert!(rpm_ostree_current_json_deployment_mentions_package(
             json, "kate"
         ));
+    }
+
+    #[test]
+    fn staged_deployment_detection_finds_pending_kate() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": false,
+                    "staged": true,
+                    "requested-packages": ["kate", "git"]
+                },
+                {
+                    "booted": true,
+                    "staged": false,
+                    "requested-packages": ["git"]
+                }
+            ]
+        }"#;
+
+        assert!(rpm_ostree_staged_deployment_mentions_package(json, "kate"));
+        assert!(!rpm_ostree_current_json_deployment_mentions_package(
+            json, "kate"
+        ));
+    }
+
+    #[test]
+    fn non_staged_rollback_deployment_is_not_pending() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": true,
+                    "requested-packages": ["git"]
+                },
+                {
+                    "booted": false,
+                    "requested-packages": ["kate"]
+                }
+            ]
+        }"#;
+
+        assert!(!rpm_ostree_staged_deployment_mentions_package(json, "kate"));
     }
 
     #[test]

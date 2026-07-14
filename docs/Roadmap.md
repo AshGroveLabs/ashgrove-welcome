@@ -1,5 +1,5 @@
 ---
-modified: 2026-07-10
+modified: 2026-07-14
 type: roadmap
 project: AshGrove Welcome
 legacy_project_name: Forge Welcome
@@ -25,7 +25,7 @@ Implementation and fix revisions use four-part versions only inside their parent
 ```text
 v0.6.1.0
 v0.6.1.1
-v0.6.1.9
+v0.6.1.12
 ```
 
 Fix revisions do not become roadmap milestones.
@@ -47,20 +47,18 @@ Delivered and validated direct inline Development Pack install/uninstall behavio
 Final accepted revision:
 
 ```text
-v0.6.1.9
+v0.6.1.12
 ```
 
-Final validation artifact:
-
-```text
-ashgrove_welcome_v0.6.1.9.zip
-```
+MILESTONE HANDOFF REVIEW approved `v0.6.1.12` with non-blocking deferrals after the corrected code change walkthrough was accepted and the full host GUI install/remove/reboot lifecycle passed.
 
 ## Active / Next Milestone
 
 ### v0.6.2 — Task Progress and Logging
 
 **Status:** Planned
+
+Do not start this milestone until the completed `v0.6.1` work is committed, pushed, and the source is refreshed.
 
 Objective:
 

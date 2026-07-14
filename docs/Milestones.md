@@ -1,5 +1,5 @@
 ---
-modified: 2026-07-10
+modified: 2026-07-14
 type: project-milestones
 project: AshGrove Welcome
 legacy_project_name: Forge Welcome
@@ -7,7 +7,7 @@ status: active
 last_completed_milestone: v0.6.1 — Inline Pack Install Workflow
 active_roadmap_milestone: v0.6.2 — Task Progress and Logging
 current_implementation_revision: Not created
-latest_validation_artifact: ashgrove_welcome_v0.6.1.9.zip
+final_accepted_revision: v0.6.1.12
 ---
 
 # AshGrove Welcome Milestones
@@ -37,9 +37,10 @@ Revision zero is the initial implementation of the active roadmap milestone. Fix
 | Item | Value |
 |---|---|
 | Last completed roadmap milestone | `v0.6.1 — Inline Pack Install Workflow` |
-| Final accepted revision | `v0.6.1.9` |
-| Final validation artifact | `ashgrove_welcome_v0.6.1.9.zip` |
-| Code review result | Ready |
+| Final accepted revision | `v0.6.1.12` |
+| Manual host GUI validation | Full install/remove/reboot lifecycle passed |
+| Code review result | APPROVED WITH NON-BLOCKING NOTES |
+| Handoff review result | APPROVED WITH NON-BLOCKING DEFERRALS |
 | Active roadmap milestone | `v0.6.2 — Task Progress and Logging` |
 | Current implementation revision | `Not created` |
 | Current workflow state | Milestone complete; Git commit and push pending |
@@ -83,18 +84,21 @@ Summary:
 | `v0.6.1.7` | Fix | Added container runtime action guard. | Superseded by later fixes | Legacy/generated bundle |
 | `v0.6.1.8` | Fix | Moved install execution off UI thread and reduced rpm-ostree progress-output crash risk. | Superseded by later fixes | Legacy/generated bundle |
 | `v0.6.1.9` | Fix | Added pending reboot / final validated install-source behavior. | Passed | `ashgrove_welcome_v0.6.1.9.zip` |
+| `v0.6.1.10` | Fix | Closed F-001 through F-004. | Automated validation passed; clippy warnings recorded | Documentation evidence |
+| `v0.6.1.11` | Fix | Added direction-specific System Update Scheduled presentation. | Automated validation passed | Documentation evidence |
+| `v0.6.1.12` | Fix | Corrected scheduled-card replacement timing. | Full host GUI lifecycle passed | Documentation evidence |
 
 ### Final Acceptance
 
 | Item | Result |
 |---|---|
 | Initial implementation revision | `v0.6.1.0` |
-| Final accepted revision | `v0.6.1.9` |
-| Number of fix revisions | `9` |
-| Final validation artifact | `ashgrove_welcome_v0.6.1.9.zip` |
-| Build result | Passed by user validation |
-| Validation result | Passed |
-| Code review result | Ready |
+| Final accepted revision | `v0.6.1.12` |
+| Corrective revision chain | `v0.6.1.9` → `v0.6.1.10` → `v0.6.1.11` → `v0.6.1.12` |
+| Manual validation | Full host GUI lifecycle passed |
+| Validation result | Accepted with documentation deferrals |
+| Code review result | APPROVED WITH NON-BLOCKING NOTES |
+| Handoff review result | APPROVED WITH NON-BLOCKING DEFERRALS |
 | Git commit state | Pending |
 | Git push state | Pending |
 
@@ -113,12 +117,22 @@ Summary:
 - Container runtime action guard blocks accidental package actions from `forge-dev`.
 - Real Gaming Pack execution remains disabled.
 - No arbitrary shell execution was introduced.
+- Scheduled rpm-ostree install/removal replaces Kate with a non-actionable **System Update Scheduled** card that names the operation, requires reboot, and reports 100% task progress.
+- Blocking findings `F-001` through `F-004` are closed.
+
+### Non-Blocking Deferrals
+
+- Missing or incomplete revision-specific automated-validation documentation.
+- Manual-validation record hygiene.
+- rpm-ostree detection/parser technical debt.
 
 # Current / Planned Milestones
 
 ## v0.6.2 — Task Progress and Logging
 
 **Status:** Planned / next
+
+Implementation must not start until the completed v0.6.1 work is committed, pushed, and the source is refreshed.
 
 ### Roadmap Milestone
 

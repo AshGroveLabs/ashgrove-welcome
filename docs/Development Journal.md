@@ -1,5 +1,5 @@
 ---
-modified: 2026-07-10
+modified: 2026-07-14
 type: development-journal
 project: AshGrove Welcome
 status: active
@@ -7,16 +7,24 @@ status: active
 
 # Development Journal
 
-## 2026-07-10 — v0.6.1 Milestone Complete
+## 2026-07-14 — v0.6.1 Final Milestone Closure
+
+MILESTONE HANDOFF REVIEW approved `v0.6.1.12` as the final accepted revision with non-blocking deferrals. CODE REVIEW was **APPROVED WITH NON-BLOCKING NOTES**, the corrected CODE CHANGE WALKTHROUGH was accepted, and manual host GUI validation passed the complete available → scheduled install → reboot → installed → scheduled removal → reboot → available lifecycle.
+
+Findings `F-001` through `F-004` are closed. The **System Update Scheduled** replacement card is accepted behavior for rpm-ostree reboot-required install/removal states. Deferred notes are revision-specific automated-validation documentation, manual-validation record hygiene, and rpm-ostree detection/parser technical debt.
+
+No source code was changed for milestone closure. The next legal workflow action is `COMMIT / PUSH`; `v0.6.2 — Task Progress and Logging` must wait until commit/push and source refresh are complete.
+
+## 2026-07-10 — v0.6.1 Preliminary Closure (Superseded)
 
 ### Summary
 
-Completed `v0.6.1 — Inline Pack Install Workflow`.
+This preliminary closure record was superseded by the corrective review and implementation chain ending at `v0.6.1.12`.
 
 The final accepted implementation revision is:
 
 ```text
-v0.6.1.9
+v0.6.1.12
 ```
 
 The final validation artifact is:
@@ -42,7 +50,7 @@ Validated behavior:
 
 ### Fix History
 
-The milestone started as `v0.6.1.0` and progressed through nine implementation fix revisions. The final accepted revision is `v0.6.1.9`.
+The milestone started as `v0.6.1.0`. The v0.6.1.9 candidate subsequently entered corrective review, and the final accepted revision is `v0.6.1.12`.
 
 The fixes addressed:
 
@@ -77,7 +85,7 @@ New behavior:
 ### Current State
 
 - Last completed milestone: `v0.6.1 — Inline Pack Install Workflow`
-- Final accepted revision: `v0.6.1.9`
+- Final accepted revision: `v0.6.1.12`
 - Next milestone: `v0.6.2 — Task Progress and Logging`
 - Git commit state: Pending
 - Git push state: Pending

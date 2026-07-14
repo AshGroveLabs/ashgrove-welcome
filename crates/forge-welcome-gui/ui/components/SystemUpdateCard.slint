@@ -1,0 +1,65 @@
+export component SystemUpdateCard inherits Rectangle {
+    in property <string> operation-text;
+
+    height: 164px;
+    border-radius: 14px;
+    background: #211b16;
+    border-width: 1px;
+    border-color: #ff7a18;
+
+    Rectangle {
+        x: 20px;
+        y: 20px;
+        width: 52px;
+        height: 52px;
+        border-radius: 26px;
+        background: #ff7a1826;
+
+        Text {
+            text: "↻";
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: #ff9a4d;
+            font-size: 30px;
+            font-weight: 700;
+        }
+    }
+
+    Text {
+        x: 92px;
+        y: 20px;
+        text: "System Update Scheduled";
+        color: #ffffff;
+        font-size: 21px;
+        font-weight: 800;
+    }
+
+    Text {
+        x: 92px;
+        y: 55px;
+        width: parent.width - 116px;
+        text: "Kate has been scheduled for " + root.operation-text + ".";
+        color: #e4e4e4;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    Text {
+        x: 92px;
+        y: 84px;
+        width: parent.width - 116px;
+        text: "A reboot is required to complete this system update.";
+        color: #ffb57d;
+        font-size: 16px;
+        font-weight: 700;
+    }
+
+    // Intentionally reserved for a future reboot action.
+    Rectangle {
+        x: parent.width - 184px;
+        y: 124px;
+        width: 160px;
+        height: 20px;
+        background: #00000000;
+    }
+}
