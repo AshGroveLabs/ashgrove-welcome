@@ -6,11 +6,11 @@ legacy_project_name: Forge Welcome
 status: milestone-complete
 last_completed_milestone: v0.6.2 — Task Progress and Logging
 final_accepted_revision: v0.6.2.8
-base_commit: ce8ce6779beddef8780dd2e6a8039d6fa4c0807b
-implementation_commit_state: Not committed
-implementation_push_state: Not pushed
-workflow_state: Milestone complete; Git commit and push pending
-next_workflow_action: COMMIT / PUSH
+base_commit: 486225891659dac8d310f3fb5246f5088350098a
+implementation_commit_state: Committed
+implementation_push_state: Pushed
+workflow_state: v0.6.2 committed and pushed; documentation status refresh only
+next_workflow_action: PROJECT STATUS
 ---
 
 # Project Status
@@ -19,10 +19,10 @@ next_workflow_action: COMMIT / PUSH
 
 - Last completed milestone: `v0.6.2 — Task Progress and Logging`
 - Final accepted revision: `v0.6.2.8`
-- Baseline commit: `ce8ce6779beddef8780dd2e6a8039d6fa4c0807b`
-- Current workflow state: `Milestone complete; Git commit and push pending`
-- Next legal workflow action: `COMMIT / PUSH`
-- Commit/push state: `Not committed; not pushed`
+- Baseline commit: `486225891659dac8d310f3fb5246f5088350098a`
+- Current workflow state: `v0.6.2 committed and pushed; documentation status refresh only`
+- Next legal workflow action: `PROJECT STATUS`
+- Commit/push state: `Committed; pushed`
 - Next planned milestone: `v0.6.3 — Multi-Item Pack Page Preparation`
 - `v0.6.3` status: `Not started`
 
@@ -38,9 +38,9 @@ next_workflow_action: COMMIT / PUSH
 | BUILD AND VALIDATE | Passed |
 | CODE REVIEW result | Approved `v0.6.2.8` for MILESTONE HANDOFF REVIEW |
 | Handoff review result | Accepted by user |
-| Git commit state | Not committed |
-| Git push state | Not pushed |
-| Next workflow action | COMMIT / PUSH |
+| Git commit state | Committed |
+| Git push state | Pushed |
+| Next workflow action | PROJECT STATUS |
 | Last updated | 2026-07-27 |
 
 ## Executive Summary
@@ -49,7 +49,7 @@ next_workflow_action: COMMIT / PUSH
 
 The milestone improved Development Pack task progress, captured rpm-ostree stdout/stderr, added progress parsing and clamping, preserved concise UI status text, corrected Kate source classification, preserved red trash uninstall behavior for confirmed removable sources, compacted the pack UI, and added persistent structured runtime logging.
 
-The milestone is complete from the implementation/review/handoff workflow perspective. Git commit and push remain pending. Do not start `v0.6.3` until commit/push and refreshed project status are complete.
+The milestone is complete from the implementation/review/handoff workflow perspective, and the v0.6.2 implementation commit has been pushed. Do not start `v0.6.3` until refreshed PROJECT STATUS authorizes the next milestone.
 
 ## Validation Summary
 
@@ -92,7 +92,7 @@ The `v0.6.2` handoff was accepted by the user despite lacking full code-symbol w
 | Code quality | Accepted | CODE REVIEW approved `v0.6.2.8` for handoff review. |
 | Build health | Passed | BUILD AND VALIDATE passed. |
 | Test health | Passed | Latest reported counts: core 111 passed, GUI 39 passed. |
-| Documentation | Updated | Completion docs now record `v0.6.2` as complete and commit/push pending. |
+| Documentation | Updated | Completion docs now record `v0.6.2` as complete, committed, and pushed. |
 | Safety | Preserved | No commit, push, package install/uninstall, or real Gaming Pack execution in this completion documentation pass. |
 
 ## Non-Blocking Deferrals
@@ -106,8 +106,6 @@ The `v0.6.2` handoff was accepted by the user despite lacking full code-symbol w
 ## Next Command Loop
 
 ```text
-COMMIT / PUSH
-      ↓
 PROJECT STATUS refresh
       ↓
 IMPLEMENT PROJECT MILESTONE v0.6.3 only after approval

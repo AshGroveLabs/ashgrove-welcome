@@ -84,7 +84,7 @@ The `v0.6.2` handoff was accepted despite lacking full code-symbol-level walkthr
 
 ## v0.6.1.15 — Application Catalog Foundation
 
-**Status:** Complete — awaiting commit and push
+**Status:** Complete — historical checkpoint
 
 ### Added
 

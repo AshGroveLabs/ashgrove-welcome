@@ -7,7 +7,7 @@ status: milestone-complete
 last_completed_milestone: v0.6.2 — Task Progress and Logging
 final_accepted_revision: v0.6.2.8
 next_planned_milestone: v0.6.3 — Multi-Item Pack Page Preparation
-next_workflow_action: COMMIT / PUSH
+next_workflow_action: PROJECT STATUS
 ---
 
 # AshGrove Welcome Milestones
@@ -39,9 +39,9 @@ Revision zero is the initial implementation of the active roadmap milestone. Fix
 | Last completed milestone | `v0.6.2 — Task Progress and Logging` |
 | Final accepted revision | `v0.6.2.8` |
 | Milestone status | Complete |
-| Baseline commit | `ce8ce6779beddef8780dd2e6a8039d6fa4c0807b` |
-| Commit / push | Pending |
-| Next legal workflow action | `COMMIT / PUSH` |
+| Baseline commit | `486225891659dac8d310f3fb5246f5088350098a` |
+| Commit / push | Complete |
+| Next legal workflow action | `PROJECT STATUS` |
 | Next planned milestone | `v0.6.3 — Multi-Item Pack Page Preparation` |
 | v0.6.3 status | Not started |
 
@@ -121,4 +121,4 @@ Summary:
 
 **Status:** Planned; not started.
 
-Do not start `v0.6.3` until `v0.6.2` commit/push is complete and a refreshed PROJECT STATUS authorizes the next milestone.
+Do not start `v0.6.3` until refreshed PROJECT STATUS authorizes the next milestone.

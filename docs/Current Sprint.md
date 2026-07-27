@@ -6,11 +6,11 @@ legacy_project_name: Forge Welcome
 status: milestone-complete
 last_completed_milestone: v0.6.2 — Task Progress and Logging
 final_accepted_revision: v0.6.2.8
-workflow_state: Milestone complete; Git commit and push pending
-base_commit: ce8ce6779beddef8780dd2e6a8039d6fa4c0807b
-implementation_commit_state: Not committed
-implementation_push_state: Not pushed
-next_workflow_action: COMMIT / PUSH
+workflow_state: v0.6.2 committed and pushed; documentation status refresh only
+base_commit: 486225891659dac8d310f3fb5246f5088350098a
+implementation_commit_state: Committed
+implementation_push_state: Pushed
+next_workflow_action: PROJECT STATUS
 ---
 
 # Current Sprint
@@ -19,9 +19,9 @@ next_workflow_action: COMMIT / PUSH
 
 - Last completed milestone: `v0.6.2 — Task Progress and Logging`
 - Final accepted revision: `v0.6.2.8`
-- Current workflow stage: `Milestone complete; Git commit and push pending`
-- Next legal workflow action: `COMMIT / PUSH`
-- Commit/push state: `Not committed; not pushed`
+- Current workflow stage: `v0.6.2 committed and pushed; documentation status refresh only`
+- Next legal workflow action: `PROJECT STATUS`
+- Commit/push state: `Committed; pushed`
 - Next planned milestone: `v0.6.3 — Multi-Item Pack Page Preparation`
 - `v0.6.3` status: `Not started`
 
@@ -32,13 +32,13 @@ next_workflow_action: COMMIT / PUSH
 | Project | AshGrove Welcome |
 | Completed roadmap milestone | `v0.6.2 — Task Progress and Logging` |
 | Final accepted revision | `v0.6.2.8` |
-| Status | Milestone complete; commit/push pending |
+| Status | Milestone complete; commit/push complete |
 | BUILD AND VALIDATE | Passed |
 | CODE REVIEW | Approved for MILESTONE HANDOFF REVIEW |
 | MILESTONE HANDOFF REVIEW | Produced and accepted by the user |
-| Git commit state | Not committed |
-| Git push state | Not pushed |
-| Next workflow action | COMMIT / PUSH |
+| Git commit state | Committed |
+| Git push state | Pushed |
+| Next workflow action | PROJECT STATUS |
 
 ## Completed Scope
 
@@ -58,13 +58,11 @@ The `v0.6.2` handoff was accepted by the user despite lacking full code-symbol w
 
 ## Completion Boundary
 
-This sprint is complete, but the repository has not been committed or pushed.
+This sprint is complete, and the v0.6.2 implementation commit has been pushed.
 
 Next workflow:
 
 ```text
-COMMIT / PUSH
-      ↓
 PROJECT STATUS refresh
       ↓
 IMPLEMENT PROJECT MILESTONE v0.6.3 only after approval

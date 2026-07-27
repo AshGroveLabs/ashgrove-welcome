@@ -1,11 +1,12 @@
 ---
-modified: 2026-07-14
+modified: 2026-07-27
 type: roadmap
 project: AshGrove Welcome
 legacy_project_name: Forge Welcome
 status: active
-last_completed_milestone: v0.6.1 — Inline Pack Install Workflow
-next_milestone: v0.6.2 — Task Progress and Logging
+last_completed_milestone: v0.6.2 — Task Progress and Logging
+final_accepted_revision: v0.6.2.8
+next_milestone: v0.6.3 — Multi-Item Pack Page Preparation
 ---
 
 # Roadmap
@@ -52,19 +53,21 @@ v0.6.1.12
 
 MILESTONE HANDOFF REVIEW approved `v0.6.1.12` with non-blocking deferrals after the corrected code change walkthrough was accepted and the full host GUI install/remove/reboot lifecycle passed.
 
-## Active / Next Milestone
-
 ### v0.6.2 — Task Progress and Logging
 
-**Status:** Planned
+**Status:** Complete
 
-Do not start this milestone until the completed `v0.6.1` work is committed, pushed, and the source is refreshed.
+Final accepted revision:
+
+```text
+v0.6.2.8
+```
 
 Objective:
 
-Improve visible task progress and persistent diagnostic logging around the validated inline workflow.
+Improved visible task progress and persistent diagnostic logging around the validated inline workflow.
 
-Planned work:
+Delivered:
 
 - Improve sidebar `Tasks (%)` phase updates.
 - Improve card-level progress text.
@@ -73,11 +76,15 @@ Planned work:
 - Improve failure and recovery guidance.
 - Preserve v0.6.1 direct install/uninstall behavior.
 
-## Future Milestones
+## Active / Next Milestone
 
 ### v0.6.3 — Multi-Item Pack Page Preparation
 
-Planned.
+**Status:** Planned / not started
+
+Do not start this milestone until PROJECT STATUS authorizes v0.6.3 planning.
+
+## Future Milestones
 
 ### v0.6.4 — Additional Pack UI Preparation
 
