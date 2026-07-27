@@ -1,9 +1,18 @@
+use serde_json::Value;
 use std::{env, path::Path, process::Command};
 
 const DEVELOPMENT_VALIDATION_TOOL_NAME: &str = "Kate";
 const DEVELOPMENT_VALIDATION_TOOL_COMMAND: &str = "kate";
 const KATE_PACKAGE_NAME: &str = "kate";
 const KATE_FLATPAK_APP_ID: &str = "org.kde.kate";
+const RPM_OSTREE_LAYERED_PACKAGE_KEYS: &[&str] = &[
+    "requested-packages",
+    "requested-local-packages",
+    "base-layered-packages",
+    "layered-packages",
+    "layeredPackages",
+    "LayeredPackages",
+];
 
 #[derive(Debug, Clone)]
 pub struct DevelopmentPackStatus {
@@ -106,15 +115,13 @@ impl InstallSource {
 
     pub fn ui_metadata(self) -> &'static str {
         match self {
-            Self::NotInstalled => "Host application · kate · Development Pack validation item",
+            Self::NotInstalled => "Host application",
             Self::PendingOstreeInstall => {
                 "Kate installation staged by rpm-ostree · reboot required"
             }
             Self::PendingOstreeRemoval => "Kate removal staged by rpm-ostree · reboot required",
-            Self::HostOstreeLayered => "Installed via host rpm-ostree layered package · removable",
-            Self::HostBaseImage => "Installed in host base image · OS-owned package",
-            Self::FlatpakSystem => "Installed via system Flatpak · removable",
-            Self::FlatpakUser => "Installed via user Flatpak · removable",
+            Self::HostOstreeLayered | Self::HostBaseImage => "Host application",
+            Self::FlatpakSystem | Self::FlatpakUser => "Flatpak application",
             Self::Unknown => "Installed · source unknown · uninstall disabled",
         }
     }
@@ -150,6 +157,14 @@ impl ProbeResult {
             stderr_hint
         )
     }
+}
+
+struct KateProbeSet<'a> {
+    json: &'a ProbeResult,
+    rpm: &'a ProbeResult,
+    flatpak_system: &'a ProbeResult,
+    flatpak_user: &'a ProbeResult,
+    executable: &'a ProbeResult,
 }
 
 fn executable_path_probe(executable_name: &str) -> ProbeResult {
@@ -268,28 +283,52 @@ fn detect_kate_install_source_with_detail() -> (InstallSource, String, Vec<Detec
     details.push(executable_probe.summary());
     probe_log.push(DetectionProbeLogEntry::from_probe(6, &executable_probe));
 
-    if flatpak_system_probe.success {
+    let probes = KateProbeSet {
+        json: &json_probe,
+        rpm: &rpm_probe,
+        flatpak_system: &flatpak_system_probe,
+        flatpak_user: &flatpak_user_probe,
+        executable: &executable_probe,
+    };
+
+    let install_source = classify_kate_install_source(ostree_host, &probes, &mut details);
+
+    if install_source == InstallSource::NotInstalled {
+        probe_log.push(DetectionProbeLogEntry::not_installed_fallback(7));
+    }
+
+    (install_source, details.join(" | "), probe_log)
+}
+
+fn classify_kate_install_source(
+    ostree_host: bool,
+    probes: &KateProbeSet<'_>,
+    details: &mut Vec<String>,
+) -> InstallSource {
+    if probes.flatpak_system.success {
         details.push("decision=FlatpakSystem via flatpak info --system".to_string());
-        return (InstallSource::FlatpakSystem, details.join(" | "), probe_log);
+        return InstallSource::FlatpakSystem;
     }
 
-    if flatpak_user_probe.success {
+    if probes.flatpak_user.success {
         details.push("decision=FlatpakUser via flatpak info --user".to_string());
-        return (InstallSource::FlatpakUser, details.join(" | "), probe_log);
+        return InstallSource::FlatpakUser;
     }
 
-    let current_runtime_has_kate = rpm_probe.success && executable_probe.success;
-    let staged_deployment = ostree_host
-        .then(|| extract_deployment_object_with_true_key(&json_probe.stdout, "staged"))
+    let current_runtime_has_kate = probes.rpm.success && probes.executable.success;
+    let rpm_ostree_json = ostree_host
+        .then(|| RpmOstreeStatusJson::parse(&probes.json.stdout))
         .flatten();
-    let staged_mentions_kate = staged_deployment.as_deref().is_some_and(|deployment| {
-        rpm_ostree_deployment_mentions_package(deployment, KATE_PACKAGE_NAME)
-    });
-    let booted_mentions_kate = ostree_host
-        && rpm_ostree_current_json_deployment_mentions_package(
-            &json_probe.stdout,
-            KATE_PACKAGE_NAME,
-        );
+    let rpm_ostree_status_available = rpm_ostree_json.is_some();
+    let staged_deployment_present = rpm_ostree_json
+        .as_ref()
+        .is_some_and(|status| status.has_deployment_with_true_key("staged"));
+    let staged_mentions_kate = rpm_ostree_json
+        .as_ref()
+        .is_some_and(|status| status.staged_deployment_mentions_package(KATE_PACKAGE_NAME));
+    let booted_mentions_kate = rpm_ostree_json
+        .as_ref()
+        .is_some_and(|status| status.booted_deployment_mentions_package(KATE_PACKAGE_NAME));
 
     // Guard against stale rpm-ostree deployment evidence. The app must not show
     // Kate as installed unless the current runtime can also prove that the Kate
@@ -300,22 +339,19 @@ fn detect_kate_install_source_with_detail() -> (InstallSource, String, Vec<Detec
                 "decision=PendingOstreeInstall via staged non-booted rpm-ostree deployment"
                     .to_string(),
             );
-            return (
-                InstallSource::PendingOstreeInstall,
-                details.join(" | "),
-                probe_log,
-            );
+            return InstallSource::PendingOstreeInstall;
         }
 
-        if rpm_probe.success && !executable_probe.success {
+        if probes.rpm.success && !probes.executable.success {
             details.push(
                 "rpm_query_kate succeeded, but the kate executable was not found on PATH; treating Kate as NotInstalled"
                     .to_string(),
             );
         }
 
-        if ostree_host
-            && rpm_ostree_any_deployment_mentions_package(&json_probe.stdout, KATE_PACKAGE_NAME)
+        if rpm_ostree_json
+            .as_ref()
+            .is_some_and(|status| status.any_deployment_mentions_package(KATE_PACKAGE_NAME))
         {
             details.push(
                 "rpm-ostree status mentions kate in a deployment, but current host rpm/path evidence does not show Kate installed; treating Kate as NotInstalled"
@@ -323,163 +359,152 @@ fn detect_kate_install_source_with_detail() -> (InstallSource, String, Vec<Detec
             );
         }
 
-        probe_log.push(DetectionProbeLogEntry::not_installed_fallback(7));
         details.push("decision=NotInstalled current_runtime_has_kate=false".to_string());
-        return (InstallSource::NotInstalled, details.join(" | "), probe_log);
+        return InstallSource::NotInstalled;
     }
 
-    if staged_deployment.is_some() && booted_mentions_kate && !staged_mentions_kate {
+    if staged_deployment_present && booted_mentions_kate && !staged_mentions_kate {
         details.push(
             "decision=PendingOstreeRemoval via Kate present in booted deployment and absent from staged deployment"
                 .to_string(),
         );
-        return (
-            InstallSource::PendingOstreeRemoval,
-            details.join(" | "),
-            probe_log,
-        );
+        return InstallSource::PendingOstreeRemoval;
     }
 
     if ostree_host
-        && rpm_ostree_current_deployment_mentions_package(
-            &json_probe.stdout,
-            &text_probe.stdout,
-            KATE_PACKAGE_NAME,
-        )
+        && rpm_ostree_json
+            .as_ref()
+            .is_some_and(|status| status.booted_deployment_mentions_package(KATE_PACKAGE_NAME))
     {
         details.push(
-            "decision=HostOstreeLayered via current runtime RPM evidence plus current rpm-ostree deployment evidence"
+            "decision=HostOstreeLayered via current runtime RPM evidence plus structured booted rpm-ostree deployment evidence"
                 .to_string(),
         );
-        return (
-            InstallSource::HostOstreeLayered,
-            details.join(" | "),
-            probe_log,
+        return InstallSource::HostOstreeLayered;
+    }
+
+    if ostree_host && rpm_ostree_status_available {
+        details.push(
+            "decision=Unknown because Kate is active, but structured rpm-ostree status has no booted layered/requested Kate evidence"
+                .to_string(),
         );
+        return InstallSource::Unknown;
     }
 
     if ostree_host {
         details.push(
-            "decision=HostBaseImage via current rpm -q kate plus executable path confirmation without layered rpm-ostree evidence"
+            "decision=Unknown because Kate is active but rpm-ostree status did not return usable layered/base-image evidence"
                 .to_string(),
         );
-        return (InstallSource::HostBaseImage, details.join(" | "), probe_log);
+        return InstallSource::Unknown;
     }
 
     details.push(
         "decision=Unknown via current rpm -q kate plus executable path confirmation outside an ostree host"
             .to_string(),
     );
-    (InstallSource::Unknown, details.join(" | "), probe_log)
+    InstallSource::Unknown
 }
 
 fn is_ostree_host() -> bool {
     Path::new("/run/ostree-booted").exists()
 }
 
-fn rpm_ostree_current_deployment_mentions_package(
-    json_output: &str,
-    text_output: &str,
-    package_name: &str,
-) -> bool {
-    rpm_ostree_current_json_deployment_mentions_package(json_output, package_name)
-        || rpm_ostree_text_mentions_layered_package(text_output, package_name)
-}
-
+#[cfg(test)]
 fn rpm_ostree_any_deployment_mentions_package(output: &str, package_name: &str) -> bool {
-    json_array_contains_string(output, "requested-packages", package_name)
-        || json_array_contains_string(output, "requested-local-packages", package_name)
-        || json_array_contains_string(output, "base-layered-packages", package_name)
+    RpmOstreeStatusJson::parse(output)
+        .is_some_and(|status| status.any_deployment_mentions_package(package_name))
 }
 
 #[cfg(test)]
 fn rpm_ostree_staged_deployment_mentions_package(output: &str, package_name: &str) -> bool {
-    let Some(deployment) = extract_deployment_object_with_true_key(output, "staged") else {
-        return false;
-    };
-
-    rpm_ostree_deployment_mentions_package(&deployment, package_name)
+    RpmOstreeStatusJson::parse(output)
+        .is_some_and(|status| status.staged_deployment_mentions_package(package_name))
 }
 
-fn rpm_ostree_deployment_mentions_package(deployment: &str, package_name: &str) -> bool {
-    json_array_contains_string(deployment, "requested-packages", package_name)
-        || json_array_contains_string(&deployment, "requested-local-packages", package_name)
-        || json_array_contains_string(&deployment, "base-layered-packages", package_name)
-}
-
+#[cfg(test)]
 fn rpm_ostree_current_json_deployment_mentions_package(output: &str, package_name: &str) -> bool {
-    let Some(deployment) = extract_booted_deployment_object(output) else {
-        return false;
-    };
-
-    json_array_contains_string(&deployment, "requested-packages", package_name)
-        || json_array_contains_string(&deployment, "requested-local-packages", package_name)
-        || json_array_contains_string(&deployment, "base-layered-packages", package_name)
+    RpmOstreeStatusJson::parse(output)
+        .is_some_and(|status| status.booted_deployment_mentions_package(package_name))
 }
 
-fn extract_booted_deployment_object(json_text: &str) -> Option<String> {
-    extract_deployment_object_with_true_key(json_text, "booted")
+struct RpmOstreeStatusJson {
+    deployments: Vec<Value>,
 }
 
-fn extract_deployment_object_with_true_key(json_text: &str, key: &str) -> Option<String> {
-    let key_pattern = format!("\"{key}\"");
+impl RpmOstreeStatusJson {
+    fn parse(output: &str) -> Option<Self> {
+        let status: Value = serde_json::from_str(output).ok()?;
+        let deployments = status.get("deployments")?.as_array()?.clone();
 
-    for (key_start, _) in json_text.match_indices(&key_pattern) {
-        if !json_bool_key_is_true(&json_text[key_start..]) {
-            continue;
-        }
-
-        let object_start = json_text[..key_start].rfind('{')?;
-        let object_end = find_matching_json_object_end(json_text, object_start)?;
-        return Some(json_text[object_start..=object_end].to_string());
+        Some(Self { deployments })
     }
 
-    None
-}
-
-fn json_bool_key_is_true(text_from_key: &str) -> bool {
-    let Some(colon_index) = text_from_key.find(':') else {
-        return false;
-    };
-
-    text_from_key[colon_index + 1..]
-        .trim_start()
-        .starts_with("true")
-}
-
-fn find_matching_json_object_end(json_text: &str, object_start: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-
-    for (offset, character) in json_text[object_start..].char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-
-        match character {
-            '"' => in_string = true,
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(object_start + offset);
-                }
-            }
-            _ => {}
-        }
+    fn booted_deployment_mentions_package(&self, package_name: &str) -> bool {
+        self.deployment_with_true_key("booted")
+            .is_some_and(|deployment| deployment_mentions_package(deployment, package_name))
     }
 
-    None
+    fn staged_deployment_mentions_package(&self, package_name: &str) -> bool {
+        self.deployment_with_true_key("staged")
+            .is_some_and(|deployment| deployment_mentions_package(deployment, package_name))
+    }
+
+    fn any_deployment_mentions_package(&self, package_name: &str) -> bool {
+        self.deployment_values()
+            .any(|deployment| deployment_mentions_package(deployment, package_name))
+    }
+
+    fn deployment_with_true_key(&self, key: &str) -> Option<&Value> {
+        self.deployment_values()
+            .find(|deployment| deployment.get(key).and_then(Value::as_bool) == Some(true))
+    }
+
+    fn has_deployment_with_true_key(&self, key: &str) -> bool {
+        self.deployment_with_true_key(key).is_some()
+    }
+
+    fn deployment_values(&self) -> impl Iterator<Item = &Value> {
+        self.deployments
+            .iter()
+            .filter(|deployment| deployment.is_object())
+    }
 }
 
+fn deployment_mentions_package(deployment: &Value, package_name: &str) -> bool {
+    RPM_OSTREE_LAYERED_PACKAGE_KEYS
+        .iter()
+        .any(|key| json_array_contains_package(deployment, key, package_name))
+}
+
+fn json_array_contains_package(deployment: &Value, key: &str, package_name: &str) -> bool {
+    deployment
+        .get(key)
+        .and_then(Value::as_array)
+        .is_some_and(|packages| {
+            packages.iter().any(|package| {
+                package
+                    .as_str()
+                    .is_some_and(|name| package_name_matches(name, package_name))
+            })
+        })
+}
+
+fn package_name_matches(candidate: &str, package_name: &str) -> bool {
+    candidate == package_name
+        || candidate
+            .strip_prefix(package_name)
+            .is_some_and(|suffix| suffix.starts_with('-') && suffix_is_version_like(&suffix[1..]))
+}
+
+fn suffix_is_version_like(suffix: &str) -> bool {
+    suffix
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_ascii_digit())
+}
+
+#[cfg(test)]
 fn rpm_ostree_text_mentions_layered_package(output: &str, package_name: &str) -> bool {
     output.lines().any(|line| {
         let lower = line.to_lowercase();
@@ -496,33 +521,13 @@ fn rpm_ostree_text_mentions_layered_package(output: &str, package_name: &str) ->
     })
 }
 
+#[cfg(test)]
 fn json_array_contains_string(json_text: &str, key: &str, value: &str) -> bool {
-    let key_pattern = format!("\"{key}\"");
-    let value_pattern = format!("\"{value}\"");
-    let mut search_start = 0;
-
-    while let Some(relative_key_start) = json_text[search_start..].find(&key_pattern) {
-        let key_start = search_start + relative_key_start;
-        let after_key = &json_text[key_start + key_pattern.len()..];
-        let Some(array_start_relative) = after_key.find('[') else {
-            search_start = key_start + key_pattern.len();
-            continue;
-        };
-
-        let array_text = &after_key[array_start_relative..];
-        let Some(array_end_relative) = array_text.find(']') else {
-            return false;
-        };
-
-        let array_body = &array_text[..=array_end_relative];
-        if array_body.contains(&value_pattern) {
-            return true;
-        }
-
-        search_start = key_start + key_pattern.len();
-    }
-
-    false
+    RpmOstreeStatusJson::parse(json_text).is_some_and(|status| {
+        status
+            .deployment_values()
+            .any(|deployment| json_array_contains_package(deployment, key, value))
+    })
 }
 
 fn run_probe(name: &'static str, probe: &ReadOnlyProbe) -> ProbeResult {
@@ -568,6 +573,63 @@ fn compact_probe_text(text: &str) -> String {
 mod tests {
     use super::*;
 
+    fn successful_probe(name: &'static str, stdout: &str) -> ProbeResult {
+        ProbeResult {
+            name,
+            command_line: name.to_string(),
+            command_found: true,
+            success: true,
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+        }
+    }
+
+    fn failed_probe(name: &'static str) -> ProbeResult {
+        ProbeResult {
+            name,
+            command_line: name.to_string(),
+            command_found: true,
+            success: false,
+            stdout: String::new(),
+            stderr: String::new(),
+        }
+    }
+
+    fn classify_test_kate(
+        ostree_json: &str,
+        _ostree_text: &str,
+        rpm_success: bool,
+        path_success: bool,
+    ) -> InstallSource {
+        let json_probe = if ostree_json.is_empty() {
+            failed_probe("rpm_ostree_status_json")
+        } else {
+            successful_probe("rpm_ostree_status_json", ostree_json)
+        };
+        let rpm_probe = if rpm_success {
+            successful_probe("rpm_query_kate", "kate-26.04.3-1.fc44.x86_64")
+        } else {
+            failed_probe("rpm_query_kate")
+        };
+        let executable_probe = if path_success {
+            successful_probe("path_lookup_kate", "/usr/bin/kate")
+        } else {
+            failed_probe("path_lookup_kate")
+        };
+        let flatpak_system_probe = failed_probe("flatpak_system_info_kate");
+        let flatpak_user_probe = failed_probe("flatpak_user_info_kate");
+        let mut details = vec!["ostree_host=true".to_string()];
+        let probes = KateProbeSet {
+            json: &json_probe,
+            rpm: &rpm_probe,
+            flatpak_system: &flatpak_system_probe,
+            flatpak_user: &flatpak_user_probe,
+            executable: &executable_probe,
+        };
+
+        classify_kate_install_source(true, &probes, &mut details)
+    }
+
     #[test]
     fn kate_validation_status_uses_expected_identity() {
         let status = detect_kate_validation_status();
@@ -580,7 +642,19 @@ mod tests {
     fn installed_source_metadata_is_not_icon_based() {
         assert_eq!(
             InstallSource::HostOstreeLayered.ui_metadata(),
-            "Installed via host rpm-ostree layered package · removable"
+            "Host application"
+        );
+        assert_eq!(
+            InstallSource::HostBaseImage.ui_metadata(),
+            "Host application"
+        );
+        assert_eq!(
+            InstallSource::FlatpakSystem.ui_metadata(),
+            "Flatpak application"
+        );
+        assert_eq!(
+            InstallSource::FlatpakUser.ui_metadata(),
+            "Flatpak application"
         );
         assert!(
             !InstallSource::HostOstreeLayered
@@ -702,6 +776,60 @@ mod tests {
     }
 
     #[test]
+    fn current_deployment_detection_uses_full_booted_deployment_with_nested_metadata() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "metadata": {
+                        "rpmostree": {
+                            "booted": true,
+                            "requested-packages": ["not-kate"]
+                        }
+                    },
+                    "booted": true,
+                    "requested-packages": ["kate", "git"]
+                }
+            ]
+        }"#;
+
+        assert!(rpm_ostree_current_json_deployment_mentions_package(
+            json, "kate"
+        ));
+    }
+
+    #[test]
+    fn current_deployment_detection_accepts_version_like_package_suffix() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": true,
+                    "requested-packages": ["kate-26.04.3-1.fc44.x86_64", "git"]
+                }
+            ]
+        }"#;
+
+        assert!(rpm_ostree_current_json_deployment_mentions_package(
+            json, "kate"
+        ));
+    }
+
+    #[test]
+    fn current_deployment_detection_rejects_broad_fuzzy_package_names() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": true,
+                    "requested-packages": ["kate-plugin", "kate-devel", "libkate"]
+                }
+            ]
+        }"#;
+
+        assert!(!rpm_ostree_current_json_deployment_mentions_package(
+            json, "kate"
+        ));
+    }
+
+    #[test]
     fn staged_deployment_detection_finds_pending_kate() {
         let json = r#"{
             "deployments": [
@@ -757,6 +885,167 @@ mod tests {
             json, "kate"
         ));
         assert!(rpm_ostree_any_deployment_mentions_package(json, "kate"));
+    }
+
+    #[test]
+    fn active_layered_kate_classifies_as_removable_host_ostree_layered() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": true,
+                    "requested-packages": ["kate", "git"]
+                }
+            ]
+        }"#;
+
+        assert_eq!(
+            classify_test_kate(json, "", true, true),
+            InstallSource::HostOstreeLayered
+        );
+    }
+
+    #[test]
+    fn booted_deployment_with_nested_metadata_before_booted_requested_kate_is_removable() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "metadata": {
+                        "origin": {
+                            "booted": true,
+                            "requested-packages": ["not-kate"]
+                        }
+                    },
+                    "booted": true,
+                    "requested-packages": ["kate", "git"]
+                }
+            ]
+        }"#;
+
+        assert_eq!(
+            classify_test_kate(json, "", true, true),
+            InstallSource::HostOstreeLayered
+        );
+    }
+
+    #[test]
+    fn booted_deployment_with_base_layered_packages_kate_is_removable() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": true,
+                    "base-layered-packages": ["kate", "git"]
+                }
+            ]
+        }"#;
+
+        assert_eq!(
+            classify_test_kate(json, "", true, true),
+            InstallSource::HostOstreeLayered
+        );
+    }
+
+    #[test]
+    fn booted_deployment_with_layered_packages_key_variants_kate_is_removable() {
+        for key in ["layered-packages", "layeredPackages", "LayeredPackages"] {
+            let json = format!(
+                r#"{{
+                    "deployments": [
+                        {{
+                            "booted": true,
+                            "{key}": ["kate", "git"]
+                        }}
+                    ]
+                }}"#
+            );
+
+            assert_eq!(
+                classify_test_kate(&json, "", true, true),
+                InstallSource::HostOstreeLayered,
+                "expected {key} to classify Kate as layered"
+            );
+        }
+    }
+
+    #[test]
+    fn active_kate_with_valid_booted_deployment_and_no_layered_status_fails_closed() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": true,
+                    "requested-packages": ["git"]
+                }
+            ]
+        }"#;
+
+        assert_eq!(
+            classify_test_kate(json, "State: idle\n", true, true),
+            InstallSource::Unknown
+        );
+    }
+
+    #[test]
+    fn active_kate_with_unavailable_ostree_status_fails_closed() {
+        assert_eq!(
+            classify_test_kate("", "", true, true),
+            InstallSource::Unknown
+        );
+    }
+
+    #[test]
+    fn active_kate_with_unusable_ostree_json_on_ostree_host_fails_closed() {
+        assert_eq!(
+            classify_test_kate(
+                "{ invalid json",
+                "State: idle\nLayeredPackages: git kate\n",
+                true,
+                true
+            ),
+            InstallSource::Unknown
+        );
+    }
+
+    #[test]
+    fn pending_reboot_install_remains_non_active_source() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": false,
+                    "staged": true,
+                    "requested-packages": ["kate", "git"]
+                },
+                {
+                    "booted": true,
+                    "requested-packages": ["git"]
+                }
+            ]
+        }"#;
+
+        assert_eq!(
+            classify_test_kate(json, "", false, false),
+            InstallSource::PendingOstreeInstall
+        );
+    }
+
+    #[test]
+    fn pending_reboot_removal_remains_non_actionable_source() {
+        let json = r#"{
+            "deployments": [
+                {
+                    "booted": false,
+                    "staged": true,
+                    "requested-packages": ["git"]
+                },
+                {
+                    "booted": true,
+                    "requested-packages": ["kate", "git"]
+                }
+            ]
+        }"#;
+
+        assert_eq!(
+            classify_test_kate(json, "", true, true),
+            InstallSource::PendingOstreeRemoval
+        );
     }
 
     #[test]

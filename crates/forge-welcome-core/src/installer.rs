@@ -1,10 +1,16 @@
 use crate::Pack;
 use std::env;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEVELOPMENT_VALIDATION_PACKAGE: &str = "kate";
+const RPM_OSTREE_CAPTURE_ENV: &str = "ASHGROVE_WELCOME_CAPTURE_RPMOSTREE_PROGRESS";
 
 #[derive(Debug, Clone)]
 pub struct InstallPlan {
@@ -220,6 +226,71 @@ impl ExecutionStep {
             command_spec,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandOutputSource {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RpmOstreePhase {
+    Starting,
+    Preparing,
+    Resolving,
+    Downloading,
+    Applying,
+    Finalizing,
+    Writing,
+    Staging,
+    Refreshing,
+    RebootRequired,
+    Completed,
+    Failed,
+}
+
+impl RpmOstreePhase {
+    pub fn display_status(self) -> &'static str {
+        match self {
+            Self::Starting => "Starting rpm-ostree",
+            Self::Preparing => "Preparing",
+            Self::Resolving => "Resolving dependencies",
+            Self::Downloading => "Downloading",
+            Self::Applying => "Applying changes",
+            Self::Finalizing => "Finalizing",
+            Self::Writing => "Writing deployment",
+            Self::Staging => "Staging deployment",
+            Self::Refreshing => "Refreshing",
+            Self::RebootRequired => "Reboot required",
+            Self::Completed => "Completed",
+            Self::Failed => "Failed",
+        }
+    }
+
+    fn progress_range(self) -> (i32, i32) {
+        match self {
+            Self::Starting => (5, 10),
+            Self::Preparing => (15, 20),
+            Self::Resolving => (25, 30),
+            Self::Downloading => (35, 50),
+            Self::Applying => (55, 65),
+            Self::Finalizing => (70, 80),
+            Self::Writing => (82, 88),
+            Self::Staging => (90, 94),
+            Self::Refreshing => (95, 98),
+            Self::RebootRequired | Self::Completed => (100, 100),
+            Self::Failed => (0, 98),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandProgressEvent {
+    pub phase: RpmOstreePhase,
+    pub status: &'static str,
+    pub percent: i32,
+    pub source: CommandOutputSource,
 }
 
 #[derive(Debug, Clone)]
@@ -788,36 +859,52 @@ pub fn create_execution_report(plan: &ExecutionPlan) -> ExecutionReport {
 }
 
 pub fn execute_execution_plan(plan: &ExecutionPlan) -> ExecutionReport {
+    execute_execution_plan_with_progress(plan, |_| {})
+}
+
+pub fn execute_execution_plan_with_progress<F>(
+    plan: &ExecutionPlan,
+    mut progress_callback: F,
+) -> ExecutionReport
+where
+    F: FnMut(CommandProgressEvent),
+{
     if plan.dry_run {
+        let results = plan
+            .steps
+            .iter()
+            .map(|step| {
+                CommandResult::skipped(step, "Dry-run mode does not execute system commands.")
+            })
+            .inspect(|result| log_command_result(plan, result))
+            .collect();
+
         return ExecutionReport {
             pack_id: plan.pack_id.clone(),
             pack_name: plan.pack_name.clone(),
             dry_run: plan.dry_run,
             execution_mode: plan.execution_mode,
             command_boundary: plan.command_boundary.clone(),
-            results: plan
-                .steps
-                .iter()
-                .map(|step| {
-                    CommandResult::skipped(step, "Dry-run mode does not execute system commands.")
-                })
-                .collect(),
+            results,
             requires_reboot: false,
         };
     }
 
     if !plan.command_boundary.commands_allowed {
+        let results = plan
+            .steps
+            .iter()
+            .map(|step| CommandResult::blocked(step, plan.command_boundary.safety_note.clone()))
+            .inspect(|result| log_command_result(plan, result))
+            .collect();
+
         return ExecutionReport {
             pack_id: plan.pack_id.clone(),
             pack_name: plan.pack_name.clone(),
             dry_run: plan.dry_run,
             execution_mode: plan.execution_mode,
             command_boundary: plan.command_boundary.clone(),
-            results: plan
-                .steps
-                .iter()
-                .map(|step| CommandResult::blocked(step, plan.command_boundary.safety_note.clone()))
-                .collect(),
+            results,
             requires_reboot: false,
         };
     }
@@ -825,7 +912,11 @@ pub fn execute_execution_plan(plan: &ExecutionPlan) -> ExecutionReport {
     let results = plan
         .steps
         .iter()
-        .map(execute_execution_step)
+        .map(|step| {
+            let result = execute_execution_step(step, &mut progress_callback);
+            log_command_result(plan, &result);
+            result
+        })
         .collect::<Vec<_>>();
 
     let requires_reboot = plan.requires_reboot
@@ -1198,12 +1289,912 @@ fn appears_to_be_running_as_root() -> bool {
         || env::var("USER").ok().as_deref() == Some("root")
 }
 
-fn execute_execution_step(step: &ExecutionStep) -> CommandResult {
-    if step.command_spec.requires_terminal_interaction {
+fn execute_execution_step<F>(step: &ExecutionStep, progress_callback: &mut F) -> CommandResult
+where
+    F: FnMut(CommandProgressEvent),
+{
+    if step.command_spec.program == "rpm-ostree" {
+        execute_rpm_ostree_step_with_progress(step, progress_callback)
+    } else if step.command_spec.requires_terminal_interaction {
         execute_execution_step_with_inherited_terminal(step)
     } else {
         execute_execution_step_with_captured_output(step)
     }
+}
+
+fn execute_rpm_ostree_step_with_progress<F>(
+    step: &ExecutionStep,
+    progress_callback: &mut F,
+) -> CommandResult
+where
+    F: FnMut(CommandProgressEvent),
+{
+    let started_at = Instant::now();
+    let child = Command::new(&step.command_spec.program)
+        .args(&step.command_spec.args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) => {
+            emit_failed_rpm_ostree_progress(progress_callback, CommandOutputSource::Stderr, 5);
+            return CommandResult::failed(
+                step,
+                None,
+                String::new(),
+                String::new(),
+                format!("Failed to start command: {error}"),
+                false,
+                None,
+            );
+        }
+    };
+
+    let (sender, receiver) = mpsc::channel();
+    let stdout_reader = child
+        .stdout
+        .take()
+        .map(|stdout| spawn_output_reader(CommandOutputSource::Stdout, stdout, sender.clone()));
+    let stderr_reader = child
+        .stderr
+        .take()
+        .map(|stderr| spawn_output_reader(CommandOutputSource::Stderr, stderr, sender));
+
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    let mut parser = RpmOstreeProgressParser::new();
+    let mut progress_capture = RpmOstreeProgressCapture::from_env(step);
+
+    emit_rpm_ostree_progress_for_step(
+        step,
+        progress_callback,
+        &mut parser,
+        CommandOutputSource::Stdout,
+        RpmOstreePhase::Starting,
+        None,
+    );
+
+    let status = loop {
+        match receiver.recv_timeout(Duration::from_millis(100)) {
+            Ok(chunk) => process_output_chunk(
+                step,
+                &chunk,
+                &mut stdout,
+                &mut stderr,
+                &mut parser,
+                progress_capture.as_mut(),
+                progress_callback,
+            ),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {}
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                break status;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let duration_ms = started_at.elapsed().as_millis();
+                emit_failed_rpm_ostree_progress(
+                    progress_callback,
+                    CommandOutputSource::Stderr,
+                    parser.current_percent(),
+                );
+                return CommandResult::failed(
+                    step,
+                    None,
+                    stdout,
+                    stderr,
+                    format!("Failed while waiting for command: {error}"),
+                    false,
+                    Some(duration_ms),
+                );
+            }
+        }
+    };
+
+    if let Some(reader) = stdout_reader {
+        let _ = reader.join();
+    }
+    if let Some(reader) = stderr_reader {
+        let _ = reader.join();
+    }
+
+    while let Ok(chunk) = receiver.try_recv() {
+        process_output_chunk(
+            step,
+            &chunk,
+            &mut stdout,
+            &mut stderr,
+            &mut parser,
+            progress_capture.as_mut(),
+            progress_callback,
+        );
+    }
+
+    let duration_ms = started_at.elapsed().as_millis();
+    let exit_code = status.code();
+    let reboot_required = output_mentions_reboot(&stdout) || output_mentions_reboot(&stderr);
+
+    if status.success() {
+        let final_phase = if reboot_required {
+            RpmOstreePhase::RebootRequired
+        } else {
+            RpmOstreePhase::Completed
+        };
+        emit_rpm_ostree_progress_for_step(
+            step,
+            progress_callback,
+            &mut parser,
+            CommandOutputSource::Stdout,
+            final_phase,
+            Some(100),
+        );
+        CommandResult::succeeded(
+            step,
+            exit_code.unwrap_or(0),
+            stdout,
+            stderr,
+            reboot_required,
+            duration_ms,
+        )
+    } else {
+        emit_failed_rpm_ostree_progress(
+            progress_callback,
+            CommandOutputSource::Stderr,
+            parser.current_percent(),
+        );
+        let message = match exit_code {
+            Some(code) => format!("Command exited with status code {code}."),
+            None => "Command terminated without a status code.".to_string(),
+        };
+
+        CommandResult::failed(
+            step,
+            exit_code,
+            stdout,
+            stderr,
+            message,
+            reboot_required,
+            Some(duration_ms),
+        )
+    }
+}
+
+#[derive(Debug)]
+struct CommandOutputChunk {
+    source: CommandOutputSource,
+    bytes: Vec<u8>,
+}
+
+impl CommandOutputChunk {
+    fn lossy_text(&self) -> String {
+        String::from_utf8_lossy(&self.bytes).to_string()
+    }
+}
+
+#[derive(Debug)]
+struct RpmOstreeProgressParser {
+    percent: i32,
+    last_event: Option<(RpmOstreePhase, i32)>,
+}
+
+impl RpmOstreeProgressParser {
+    fn new() -> Self {
+        Self {
+            percent: 0,
+            last_event: None,
+        }
+    }
+
+    fn current_percent(&self) -> i32 {
+        self.percent
+    }
+
+    fn accept(
+        &mut self,
+        source: CommandOutputSource,
+        phase: RpmOstreePhase,
+        explicit_percent: Option<i32>,
+    ) -> Option<CommandProgressEvent> {
+        self.accept_with_decision(source, phase, explicit_percent)
+            .event
+    }
+
+    fn accept_with_decision(
+        &mut self,
+        source: CommandOutputSource,
+        phase: RpmOstreePhase,
+        explicit_percent: Option<i32>,
+    ) -> RpmOstreeProgressDecision {
+        let (minimum, maximum) = phase.progress_range();
+        let target = explicit_percent.unwrap_or(minimum).clamp(minimum, maximum);
+        if !matches!(
+            phase,
+            RpmOstreePhase::Failed | RpmOstreePhase::RebootRequired | RpmOstreePhase::Completed
+        ) && maximum <= self.percent
+        {
+            return RpmOstreeProgressDecision {
+                event: None,
+                selected_phase: Some(phase),
+                selected_status: Some(phase.display_status()),
+                selected_percent: Some(self.percent),
+                suppressed_duplicate: false,
+            };
+        }
+
+        let percent = if matches!(phase, RpmOstreePhase::Failed) {
+            self.percent.clamp(0, 98)
+        } else {
+            target.max(self.percent).clamp(0, 100)
+        };
+
+        self.percent = percent;
+        let event_key = (phase, percent);
+        if self.last_event == Some(event_key) {
+            return RpmOstreeProgressDecision {
+                event: None,
+                selected_phase: Some(phase),
+                selected_status: Some(phase.display_status()),
+                selected_percent: Some(percent),
+                suppressed_duplicate: true,
+            };
+        }
+
+        self.last_event = Some(event_key);
+        let event = CommandProgressEvent {
+            phase,
+            status: phase.display_status(),
+            percent,
+            source,
+        };
+        RpmOstreeProgressDecision {
+            event: Some(event),
+            selected_phase: Some(phase),
+            selected_status: Some(phase.display_status()),
+            selected_percent: Some(percent),
+            suppressed_duplicate: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RpmOstreeProgressDecision {
+    event: Option<CommandProgressEvent>,
+    selected_phase: Option<RpmOstreePhase>,
+    selected_status: Option<&'static str>,
+    selected_percent: Option<i32>,
+    suppressed_duplicate: bool,
+}
+
+impl RpmOstreeProgressDecision {
+    fn ignored() -> Self {
+        Self {
+            event: None,
+            selected_phase: None,
+            selected_status: None,
+            selected_percent: None,
+            suppressed_duplicate: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct RpmOstreeProgressCapture {
+    path: PathBuf,
+    step_description: String,
+    command_operation: String,
+}
+
+impl RpmOstreeProgressCapture {
+    fn from_env(step: &ExecutionStep) -> Option<Self> {
+        if !rpm_ostree_capture_enabled(env::var_os(RPM_OSTREE_CAPTURE_ENV).as_deref()) {
+            return None;
+        }
+
+        let path = rpm_ostree_capture_path()?;
+        Some(Self {
+            path,
+            step_description: step.description.clone(),
+            command_operation: rpm_ostree_command_operation(step),
+        })
+    }
+
+    fn write_line(
+        &mut self,
+        stream: CommandOutputSource,
+        raw_bytes: &[u8],
+        split_value: &str,
+        decision: RpmOstreeProgressDecision,
+    ) {
+        let sanitized_value = split_value.trim();
+        let timestamp = unix_timestamp_millis();
+        let phase = decision
+            .selected_phase
+            .map(rpm_ostree_phase_label)
+            .unwrap_or_default();
+        let status = decision.selected_status.unwrap_or_default();
+        let percent = decision
+            .selected_percent
+            .map(|percent| percent.to_string())
+            .unwrap_or_else(|| "null".to_string());
+
+        let line = format!(
+            "{{\"timestamp_ms\":{timestamp},\"execution_step\":{},\"command_operation\":{},\"stream\":{},\"raw_value_escaped\":{},\"utf8_lossy_value\":{},\"split_value\":{},\"sanitized_value\":{},\"parser_phase_selected\":{},\"internal_display_status_selected\":{},\"percentage_selected\":{percent},\"emitted_to_gui\":{},\"suppressed_as_duplicate\":{}}}\n",
+            json_string(&self.step_description),
+            json_string(&self.command_operation),
+            json_string(stream.label()),
+            json_string(&escape_raw_bytes(raw_bytes)),
+            json_string(&String::from_utf8_lossy(raw_bytes)),
+            json_string(split_value),
+            json_string(sanitized_value),
+            json_nullable_string(phase),
+            json_nullable_string(status),
+            decision.event.is_some(),
+            decision.suppressed_duplicate
+        );
+
+        if let Some(parent) = self.path.parent() {
+            if fs::create_dir_all(parent).is_err() {
+                return;
+            }
+        }
+
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+        {
+            let _ = file.write_all(line.as_bytes());
+        }
+    }
+
+    #[cfg(test)]
+    fn for_test(path: PathBuf, step: &ExecutionStep) -> Self {
+        Self {
+            path,
+            step_description: step.description.clone(),
+            command_operation: rpm_ostree_command_operation(step),
+        }
+    }
+}
+
+fn rpm_ostree_capture_enabled(value: Option<&std::ffi::OsStr>) -> bool {
+    value == Some(std::ffi::OsStr::new("1"))
+}
+
+impl CommandOutputSource {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+        }
+    }
+}
+
+fn spawn_output_reader<R>(
+    source: CommandOutputSource,
+    mut reader: R,
+    sender: mpsc::Sender<CommandOutputChunk>,
+) -> thread::JoinHandle<()>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut buffer = [0_u8; 512];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    if sender
+                        .send(CommandOutputChunk {
+                            source,
+                            bytes: buffer[..count].to_vec(),
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    })
+}
+
+fn process_output_chunk<F>(
+    step: &ExecutionStep,
+    chunk: &CommandOutputChunk,
+    stdout: &mut String,
+    stderr: &mut String,
+    parser: &mut RpmOstreeProgressParser,
+    mut progress_capture: Option<&mut RpmOstreeProgressCapture>,
+    progress_callback: &mut F,
+) where
+    F: FnMut(CommandProgressEvent),
+{
+    let text = chunk.lossy_text();
+    match chunk.source {
+        CommandOutputSource::Stdout => stdout.push_str(&text),
+        CommandOutputSource::Stderr => stderr.push_str(&text),
+    }
+
+    for raw_value in chunk.bytes.split(|byte| *byte == b'\n' || *byte == b'\r') {
+        let split_value = String::from_utf8_lossy(raw_value);
+        log_command_output_line(step, chunk.source, &split_value);
+        let decision =
+            if let Some((phase, explicit_percent)) = parse_rpm_ostree_progress_line(&split_value) {
+                let decision = parser.accept_with_decision(chunk.source, phase, explicit_percent);
+                if let Some(event) = decision.event {
+                    log_progress_transition(Some(step), &event);
+                    progress_callback(event);
+                }
+                decision
+            } else {
+                RpmOstreeProgressDecision::ignored()
+            };
+
+        if let Some(capture) = progress_capture.as_mut() {
+            (*capture).write_line(chunk.source, raw_value, &split_value, decision);
+        }
+    }
+}
+
+fn emit_rpm_ostree_progress<F>(
+    progress_callback: &mut F,
+    parser: &mut RpmOstreeProgressParser,
+    source: CommandOutputSource,
+    phase: RpmOstreePhase,
+    explicit_percent: Option<i32>,
+) where
+    F: FnMut(CommandProgressEvent),
+{
+    if let Some(event) = parser.accept(source, phase, explicit_percent) {
+        log_progress_transition(None, &event);
+        progress_callback(event);
+    }
+}
+
+fn emit_rpm_ostree_progress_for_step<F>(
+    step: &ExecutionStep,
+    progress_callback: &mut F,
+    parser: &mut RpmOstreeProgressParser,
+    source: CommandOutputSource,
+    phase: RpmOstreePhase,
+    explicit_percent: Option<i32>,
+) where
+    F: FnMut(CommandProgressEvent),
+{
+    if let Some(event) = parser.accept(source, phase, explicit_percent) {
+        log_progress_transition(Some(step), &event);
+        progress_callback(event);
+    }
+}
+
+fn rpm_ostree_capture_path() -> Option<PathBuf> {
+    let home = env::var_os("HOME")?;
+    Some(
+        PathBuf::from(home)
+            .join(".local")
+            .join("state")
+            .join("ashgrove-welcome")
+            .join(format!(
+                "rpm-ostree-progress-capture-{}.jsonl",
+                unix_timestamp_millis()
+            )),
+    )
+}
+
+fn rpm_ostree_command_operation(step: &ExecutionStep) -> String {
+    if step.command_spec.program == "rpm-ostree" {
+        if let Some(operation) = step.command_spec.args.first() {
+            return format!("rpm-ostree {operation}");
+        }
+    }
+
+    step.description.clone()
+}
+
+fn unix_timestamp_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
+fn rpm_ostree_phase_label(phase: RpmOstreePhase) -> &'static str {
+    match phase {
+        RpmOstreePhase::Starting => "starting",
+        RpmOstreePhase::Preparing => "preparing",
+        RpmOstreePhase::Resolving => "resolving",
+        RpmOstreePhase::Downloading => "downloading",
+        RpmOstreePhase::Applying => "applying",
+        RpmOstreePhase::Finalizing => "finalizing",
+        RpmOstreePhase::Writing => "writing",
+        RpmOstreePhase::Staging => "staging",
+        RpmOstreePhase::Refreshing => "refreshing",
+        RpmOstreePhase::RebootRequired => "reboot_required",
+        RpmOstreePhase::Completed => "completed",
+        RpmOstreePhase::Failed => "failed",
+    }
+}
+
+fn escape_raw_bytes(bytes: &[u8]) -> String {
+    let mut escaped = String::new();
+    for byte in bytes {
+        match *byte {
+            b'\\' => escaped.push_str("\\\\"),
+            b'"' => escaped.push_str("\\\""),
+            b'\n' => escaped.push_str("\\n"),
+            b'\r' => escaped.push_str("\\r"),
+            b'\t' => escaped.push_str("\\t"),
+            0x20..=0x7e => escaped.push(*byte as char),
+            _ => escaped.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    escaped
+}
+
+fn json_string(value: &str) -> String {
+    let mut escaped = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{08}' => escaped.push_str("\\b"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped.push('"');
+    escaped
+}
+
+fn json_nullable_string(value: &str) -> String {
+    if value.is_empty() {
+        "null".to_string()
+    } else {
+        json_string(value)
+    }
+}
+
+fn log_command_output_line(step: &ExecutionStep, source: CommandOutputSource, line: &str) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    append_runtime_log_event(
+        "command_output_line",
+        &[
+            ("workflow", runtime_workflow_for_step(step)),
+            ("operation", rpm_ostree_command_operation(step)),
+            ("package", command_package_targets(step)),
+            ("program", step.command_spec.program.clone()),
+            ("args", step.command_spec.args.join(" ")),
+            ("stream", source.label().to_string()),
+            ("line", trimmed.to_string()),
+        ],
+    );
+}
+
+fn log_command_result(plan: &ExecutionPlan, result: &CommandResult) {
+    append_runtime_log_event(
+        "command_result",
+        &[
+            ("workflow", plan.pack_name.clone()),
+            ("operation", command_operation_from_display(&result.command)),
+            (
+                "package",
+                command_package_targets_from_display(&result.command),
+            ),
+            ("command", result.command.clone()),
+            ("status", result.status.label().to_string()),
+            (
+                "exit_status",
+                result
+                    .exit_code
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+            ),
+            ("success", result.status.is_success().to_string()),
+            (
+                "classification",
+                result.classification.kind.label().to_string(),
+            ),
+            ("reboot_required", result.reboot_required.to_string()),
+            (
+                "duration_ms",
+                result
+                    .duration_ms
+                    .map(|duration_ms| duration_ms.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+            ),
+        ],
+    );
+}
+
+fn log_progress_transition(step: Option<&ExecutionStep>, event: &CommandProgressEvent) {
+    append_runtime_log_event(
+        "progress_transition",
+        &[
+            (
+                "workflow",
+                step.map(runtime_workflow_for_step)
+                    .unwrap_or_else(|| "rpm-ostree".to_string()),
+            ),
+            (
+                "operation",
+                step.map(rpm_ostree_command_operation)
+                    .unwrap_or_else(|| "rpm-ostree".to_string()),
+            ),
+            (
+                "package",
+                step.map(command_package_targets).unwrap_or_default(),
+            ),
+            ("phase", rpm_ostree_phase_label(event.phase).to_string()),
+            ("percent", event.percent.to_string()),
+            ("status", event.status.to_string()),
+            ("stream", event.source.label().to_string()),
+        ],
+    );
+}
+
+fn append_runtime_log_event(event: &str, fields: &[(&str, String)]) {
+    #[cfg(test)]
+    {
+        let _ = (event, fields);
+        return;
+    }
+
+    #[cfg(not(test))]
+    {
+        let path = runtime_log_file_path();
+
+        if let Some(parent) = path.parent()
+            && fs::create_dir_all(parent).is_err()
+        {
+            return;
+        }
+
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+            let line = format_runtime_log_line(unix_timestamp_millis(), event, fields);
+            let _ = file.write_all(line.as_bytes());
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn runtime_log_file_path() -> PathBuf {
+    if let Some(xdg_state_home) = env::var_os("XDG_STATE_HOME") {
+        return PathBuf::from(xdg_state_home)
+            .join("ashgrove-welcome")
+            .join("ashgrove-welcome.log");
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        return PathBuf::from(home)
+            .join(".local")
+            .join("state")
+            .join("ashgrove-welcome")
+            .join("ashgrove-welcome.log");
+    }
+
+    PathBuf::from("/tmp/ashgrove-welcome.log")
+}
+
+fn format_runtime_log_line(timestamp_ms: u128, event: &str, fields: &[(&str, String)]) -> String {
+    let mut line = format!("{timestamp_ms} [{event}] event={}", json_string(event));
+
+    for (key, value) in fields {
+        line.push(' ');
+        line.push_str(key);
+        line.push('=');
+        line.push_str(&json_string(value));
+    }
+
+    line.push('\n');
+    line
+}
+
+fn runtime_workflow_for_step(step: &ExecutionStep) -> String {
+    if step.command_spec.program == "rpm-ostree" {
+        if step
+            .command_spec
+            .args
+            .first()
+            .is_some_and(|arg| arg == "uninstall")
+        {
+            return "uninstall".to_string();
+        }
+
+        if step
+            .command_spec
+            .args
+            .first()
+            .is_some_and(|arg| arg == "install")
+        {
+            return "install".to_string();
+        }
+    }
+
+    step.description.clone()
+}
+
+fn command_package_targets(step: &ExecutionStep) -> String {
+    package_args_for_program(&step.command_spec.program, &step.command_spec.args).join(",")
+}
+
+fn package_args_for_program(program: &str, args: &[String]) -> Vec<String> {
+    match program {
+        "rpm-ostree" => args.iter().skip(1).cloned().collect(),
+        "flatpak" => args
+            .iter()
+            .filter(|arg| {
+                !arg.starts_with('-')
+                    && arg.as_str() != "install"
+                    && arg.as_str() != "uninstall"
+                    && arg.as_str() != "flathub"
+            })
+            .cloned()
+            .collect(),
+        "dnf" => args
+            .iter()
+            .filter(|arg| {
+                !arg.starts_with('-') && arg.as_str() != "install" && arg.as_str() != "remove"
+            })
+            .cloned()
+            .collect(),
+        "sudo" | "pkexec" => args
+            .iter()
+            .filter(|arg| {
+                !arg.starts_with('-') && !matches!(arg.as_str(), "dnf" | "install" | "remove")
+            })
+            .cloned()
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn command_operation_from_display(command: &str) -> String {
+    let mut parts = command.split_whitespace();
+    let Some(program) = parts.next() else {
+        return String::new();
+    };
+
+    let operation = parts.next().unwrap_or_default();
+    if operation.is_empty() {
+        program.to_string()
+    } else {
+        format!("{program} {operation}")
+    }
+}
+
+fn command_package_targets_from_display(command: &str) -> String {
+    let parts = command
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let Some(program) = parts.first() else {
+        return String::new();
+    };
+
+    package_args_for_program(program, &parts[1..]).join(",")
+}
+
+fn emit_failed_rpm_ostree_progress<F>(
+    progress_callback: &mut F,
+    source: CommandOutputSource,
+    current_percent: i32,
+) where
+    F: FnMut(CommandProgressEvent),
+{
+    let mut parser = RpmOstreeProgressParser {
+        percent: current_percent,
+        last_event: None,
+    };
+    emit_rpm_ostree_progress(
+        progress_callback,
+        &mut parser,
+        source,
+        RpmOstreePhase::Failed,
+        None,
+    );
+}
+
+fn parse_rpm_ostree_progress_line(line: &str) -> Option<(RpmOstreePhase, Option<i32>)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let normalized = trimmed.to_lowercase();
+    let explicit_percent = parse_percentage(&normalized);
+
+    let phase = if contains_any(
+        &normalized,
+        &[
+            "failed",
+            "error:",
+            "error ",
+            "not authorized",
+            "permission denied",
+            "cancelled",
+            "canceled",
+        ],
+    ) {
+        RpmOstreePhase::Failed
+    } else if normalized.contains("reboot") || normalized.contains("restart required") {
+        RpmOstreePhase::RebootRequired
+    } else if normalized.contains("completed")
+        || normalized.contains("complete")
+        || normalized.contains("succeeded")
+        || normalized.contains("success")
+    {
+        RpmOstreePhase::Completed
+    } else if normalized.contains("rpm-ostree") && normalized.contains("start") {
+        RpmOstreePhase::Starting
+    } else if normalized.contains("refresh") || normalized.contains("metadata") {
+        RpmOstreePhase::Refreshing
+    } else if normalized.contains("staging") || normalized.contains("stage deployment") {
+        RpmOstreePhase::Staging
+    } else if normalized.contains("writing") || normalized.contains("write deployment") {
+        RpmOstreePhase::Writing
+    } else if normalized.contains("finaliz") || normalized.contains("cleanup") {
+        RpmOstreePhase::Finalizing
+    } else if normalized.contains("applying")
+        || normalized.contains("apply")
+        || normalized.contains("checking out")
+        || normalized.contains("checkout")
+    {
+        RpmOstreePhase::Applying
+    } else if normalized.contains("download")
+        || normalized.contains("receiving")
+        || normalized.contains("receive")
+        || normalized.contains("fetch")
+        || normalized.contains("importing")
+    {
+        RpmOstreePhase::Downloading
+    } else if normalized.contains("resolving")
+        || normalized.contains("resolve")
+        || normalized.contains("dependency")
+        || normalized.contains("dependencies")
+    {
+        RpmOstreePhase::Resolving
+    } else if normalized.contains("preparing")
+        || normalized.contains("prepare")
+        || normalized.contains("enabled rpm-md repositories")
+    {
+        RpmOstreePhase::Preparing
+    } else {
+        return None;
+    };
+
+    Some((phase, explicit_percent))
+}
+
+fn parse_percentage(text: &str) -> Option<i32> {
+    for token in text.split_whitespace() {
+        let Some(percent_text) = token.strip_suffix('%') else {
+            continue;
+        };
+        let percent_text = percent_text.trim_matches(|character: char| !character.is_ascii_digit());
+        if let Ok(percent) = percent_text.parse::<i32>() {
+            return Some(percent.clamp(0, 100));
+        }
+    }
+
+    None
 }
 
 fn execute_execution_step_with_captured_output(step: &ExecutionStep) -> CommandResult {
@@ -1356,6 +2347,23 @@ mod tests {
             distrobox_packages: vec!["zsh".to_string()],
             requires_reboot: true,
         }
+    }
+
+    fn sample_rpm_ostree_step() -> ExecutionStep {
+        ExecutionStep::new(
+            "Install 1 host package with rpm-ostree",
+            CommandSpec::new("rpm-ostree", ["install", "kate"]),
+        )
+    }
+
+    fn test_capture_path(name: &str) -> PathBuf {
+        let mut path = env::temp_dir();
+        path.push(format!(
+            "ashgrove_welcome_{name}_{}_{}.jsonl",
+            std::process::id(),
+            unix_timestamp_millis()
+        ));
+        path
     }
 
     #[test]
@@ -1856,5 +2864,382 @@ mod tests {
         assert_eq!(report.succeeded_count(), 1);
         assert_eq!(report.failed_count(), 1);
         assert!(report.summary_line().contains("Partial Success"));
+    }
+
+    #[test]
+    fn rpm_ostree_progress_parser_maps_known_phases() {
+        let cases = [
+            ("Starting rpm-ostree transaction", RpmOstreePhase::Starting),
+            ("Preparing transaction", RpmOstreePhase::Preparing),
+            ("Resolving dependencies", RpmOstreePhase::Resolving),
+            ("Downloading packages", RpmOstreePhase::Downloading),
+            ("Applying changes", RpmOstreePhase::Applying),
+            ("Finalizing deployment", RpmOstreePhase::Finalizing),
+            ("Writing deployment", RpmOstreePhase::Writing),
+            ("Staging deployment", RpmOstreePhase::Staging),
+            ("Refreshing metadata", RpmOstreePhase::Refreshing),
+            ("Reboot required", RpmOstreePhase::RebootRequired),
+            ("Transaction complete", RpmOstreePhase::Completed),
+            ("error: transaction failed", RpmOstreePhase::Failed),
+        ];
+
+        for (line, expected_phase) in cases {
+            let (phase, _) = parse_rpm_ostree_progress_line(line).expect(line);
+            assert_eq!(phase, expected_phase);
+        }
+    }
+
+    #[test]
+    fn rpm_ostree_progress_parser_handles_case_whitespace_and_multiline_chunks() {
+        let chunk = CommandOutputChunk {
+            source: CommandOutputSource::Stdout,
+            bytes: b"  PREPARING transaction  \nResolving Dependencies\rDownloading 42%".to_vec(),
+        };
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut parser = RpmOstreeProgressParser::new();
+        let mut events = Vec::new();
+        let step = sample_rpm_ostree_step();
+
+        process_output_chunk(
+            &step,
+            &chunk,
+            &mut stdout,
+            &mut stderr,
+            &mut parser,
+            None,
+            &mut |event| events.push(event),
+        );
+
+        assert_eq!(
+            events.iter().map(|event| event.phase).collect::<Vec<_>>(),
+            vec![
+                RpmOstreePhase::Preparing,
+                RpmOstreePhase::Resolving,
+                RpmOstreePhase::Downloading,
+            ]
+        );
+        assert_eq!(events[2].percent, 42);
+    }
+
+    #[test]
+    fn rpm_ostree_progress_parser_ignores_unknown_output() {
+        assert!(parse_rpm_ostree_progress_line("ostree branch detail abc123").is_none());
+    }
+
+    #[test]
+    fn rpm_ostree_progress_events_are_monotonic_and_coalesced() {
+        let mut parser = RpmOstreeProgressParser::new();
+        let mut events = Vec::new();
+
+        emit_rpm_ostree_progress(
+            &mut |event| events.push(event),
+            &mut parser,
+            CommandOutputSource::Stdout,
+            RpmOstreePhase::Downloading,
+            Some(48),
+        );
+        emit_rpm_ostree_progress(
+            &mut |event| events.push(event),
+            &mut parser,
+            CommandOutputSource::Stdout,
+            RpmOstreePhase::Resolving,
+            Some(25),
+        );
+        emit_rpm_ostree_progress(
+            &mut |event| events.push(event),
+            &mut parser,
+            CommandOutputSource::Stdout,
+            RpmOstreePhase::Resolving,
+            Some(25),
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].percent, 48);
+    }
+
+    #[test]
+    fn rpm_ostree_progress_never_reaches_completion_before_terminal_phase() {
+        let mut parser = RpmOstreeProgressParser::new();
+        let mut events = Vec::new();
+
+        emit_rpm_ostree_progress(
+            &mut |event| events.push(event),
+            &mut parser,
+            CommandOutputSource::Stdout,
+            RpmOstreePhase::Refreshing,
+            Some(100),
+        );
+
+        assert_eq!(events[0].percent, 98);
+    }
+
+    #[test]
+    fn rpm_ostree_progress_failure_retains_last_safe_percentage() {
+        let mut parser = RpmOstreeProgressParser::new();
+        let mut events = Vec::new();
+
+        emit_rpm_ostree_progress(
+            &mut |event| events.push(event),
+            &mut parser,
+            CommandOutputSource::Stdout,
+            RpmOstreePhase::Applying,
+            None,
+        );
+        emit_rpm_ostree_progress(
+            &mut |event| events.push(event),
+            &mut parser,
+            CommandOutputSource::Stderr,
+            RpmOstreePhase::Failed,
+            None,
+        );
+
+        assert_eq!(events[0].percent, 55);
+        assert_eq!(events[1].percent, 55);
+        assert_eq!(events[1].status, "Failed");
+    }
+
+    #[test]
+    fn rpm_ostree_progress_events_do_not_return_raw_output_as_status() {
+        let mut parser = RpmOstreeProgressParser::new();
+        let event = parser
+            .accept(CommandOutputSource::Stdout, RpmOstreePhase::Writing, None)
+            .expect("event");
+
+        assert_eq!(event.status, "Writing deployment");
+        assert!(!event.status.contains("objects"));
+        assert!(!event.status.contains('\n'));
+    }
+
+    #[test]
+    fn rpm_ostree_progress_capture_is_disabled_by_default() {
+        assert!(!rpm_ostree_capture_enabled(None));
+        assert!(!rpm_ostree_capture_enabled(Some(std::ffi::OsStr::new("0"))));
+        assert!(rpm_ostree_capture_enabled(Some(std::ffi::OsStr::new("1"))));
+    }
+
+    #[test]
+    fn rpm_ostree_progress_capture_escapes_carriage_returns_and_newlines() {
+        assert_eq!(
+            escape_raw_bytes(b"Preparing\rDownloading\n"),
+            "Preparing\\rDownloading\\n"
+        );
+        let path = test_capture_path("escaped_control_values");
+        let step = sample_rpm_ostree_step();
+        let mut capture = RpmOstreeProgressCapture::for_test(path.clone(), &step);
+
+        capture.write_line(
+            CommandOutputSource::Stdout,
+            b"Preparing\rDownloading\n",
+            "Preparing\rDownloading\n",
+            RpmOstreeProgressDecision {
+                event: None,
+                selected_phase: Some(RpmOstreePhase::Preparing),
+                selected_status: Some("Preparing"),
+                selected_percent: Some(15),
+                suppressed_duplicate: false,
+            },
+        );
+
+        let contents = fs::read_to_string(&path).expect("capture file");
+        let _ = fs::remove_file(&path);
+        assert!(contents.contains("\"raw_value_escaped\":\"Preparing\\\\rDownloading\\\\n\""));
+        assert!(contents.contains("\"split_value\":\"Preparing\\rDownloading\\n\""));
+    }
+
+    #[test]
+    fn rpm_ostree_progress_capture_records_stdout_and_stderr_labels() {
+        let path = test_capture_path("stream_labels");
+        let step = sample_rpm_ostree_step();
+        let mut capture = RpmOstreeProgressCapture::for_test(path.clone(), &step);
+
+        capture.write_line(
+            CommandOutputSource::Stdout,
+            b"Preparing",
+            "Preparing",
+            RpmOstreeProgressDecision::ignored(),
+        );
+        capture.write_line(
+            CommandOutputSource::Stderr,
+            b"error: failed",
+            "error: failed",
+            RpmOstreeProgressDecision::ignored(),
+        );
+
+        let contents = fs::read_to_string(&path).expect("capture file");
+        let _ = fs::remove_file(&path);
+        assert!(contents.contains("\"stream\":\"stdout\""));
+        assert!(contents.contains("\"stream\":\"stderr\""));
+    }
+
+    #[test]
+    fn rpm_ostree_progress_capture_does_not_pass_raw_values_to_ui_events() {
+        let path = test_capture_path("raw_not_ui");
+        let step = sample_rpm_ostree_step();
+        let mut capture = RpmOstreeProgressCapture::for_test(path.clone(), &step);
+        let chunk = CommandOutputChunk {
+            source: CommandOutputSource::Stdout,
+            bytes: b"Writing objects: 42%\nunknown raw detail".to_vec(),
+        };
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut parser = RpmOstreeProgressParser::new();
+        let mut events = Vec::new();
+
+        process_output_chunk(
+            &step,
+            &chunk,
+            &mut stdout,
+            &mut stderr,
+            &mut parser,
+            Some(&mut capture),
+            &mut |event| events.push(event),
+        );
+
+        let contents = fs::read_to_string(&path).expect("capture file");
+        let _ = fs::remove_file(&path);
+        assert!(contents.contains("unknown raw detail"));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].status, "Writing deployment");
+        assert!(!events[0].status.contains("Writing objects"));
+        assert!(!events[0].status.contains("unknown raw detail"));
+    }
+
+    #[test]
+    fn rpm_ostree_progress_capture_write_failure_is_non_fatal() {
+        let mut blocking_parent = env::temp_dir();
+        blocking_parent.push(format!(
+            "ashgrove_welcome_capture_blocking_parent_{}_{}",
+            std::process::id(),
+            unix_timestamp_millis()
+        ));
+        fs::write(&blocking_parent, "not a directory").expect("blocking file");
+        let path = blocking_parent.join("capture.jsonl");
+        let step = sample_rpm_ostree_step();
+        let mut capture = RpmOstreeProgressCapture::for_test(path, &step);
+        let chunk = CommandOutputChunk {
+            source: CommandOutputSource::Stderr,
+            bytes: b"error: transaction failed".to_vec(),
+        };
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut parser = RpmOstreeProgressParser::new();
+        let mut events = Vec::new();
+
+        process_output_chunk(
+            &step,
+            &chunk,
+            &mut stdout,
+            &mut stderr,
+            &mut parser,
+            Some(&mut capture),
+            &mut |event| events.push(event),
+        );
+
+        let _ = fs::remove_file(&blocking_parent);
+        assert_eq!(stderr, "error: transaction failed");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].phase, RpmOstreePhase::Failed);
+    }
+
+    #[test]
+    fn progress_transition_log_line_is_structured_and_grep_friendly() {
+        let line = format_runtime_log_line(
+            42,
+            "progress_transition",
+            &[
+                ("workflow", "install".to_string()),
+                ("operation", "rpm-ostree install".to_string()),
+                ("package", "kate".to_string()),
+                ("percent", "55".to_string()),
+                ("status", "Applying changes".to_string()),
+            ],
+        );
+
+        assert!(line.starts_with("42 [progress_transition]"));
+        assert!(line.contains("event=\"progress_transition\""));
+        assert!(line.contains("operation=\"rpm-ostree install\""));
+        assert!(line.contains("package=\"kate\""));
+        assert!(line.contains("percent=\"55\""));
+    }
+
+    #[test]
+    fn command_output_line_log_line_is_structured_and_escaped() {
+        let line = format_runtime_log_line(
+            42,
+            "command_output_line",
+            &[
+                ("program", "rpm-ostree".to_string()),
+                ("args", "install kate".to_string()),
+                ("stream", "stderr".to_string()),
+                ("line", "error: \"failed\"".to_string()),
+            ],
+        );
+
+        assert!(line.contains("[command_output_line]"));
+        assert!(line.contains("event=\"command_output_line\""));
+        assert!(line.contains("stream=\"stderr\""));
+        assert!(line.contains("line=\"error: \\\"failed\\\"\""));
+    }
+
+    #[test]
+    fn command_result_log_line_contains_status_and_exit_fields() {
+        let line = format_runtime_log_line(
+            42,
+            "command_result",
+            &[
+                ("workflow", "Development Pack".to_string()),
+                ("command", "rpm-ostree install kate".to_string()),
+                ("status", "Succeeded".to_string()),
+                ("exit_status", "0".to_string()),
+                ("success", "true".to_string()),
+            ],
+        );
+
+        assert!(line.contains("[command_result]"));
+        assert!(line.contains("event=\"command_result\""));
+        assert!(line.contains("status=\"Succeeded\""));
+        assert!(line.contains("exit_status=\"0\""));
+        assert!(line.contains("success=\"true\""));
+    }
+
+    #[test]
+    fn refresh_result_log_line_can_record_final_package_state() {
+        let line = format_runtime_log_line(
+            42,
+            "refresh_result",
+            &[
+                ("workflow", "Development Pack".to_string()),
+                ("package", "kate".to_string()),
+                ("installed", "true".to_string()),
+                ("removable", "true".to_string()),
+                ("source", "HostOstreeLayered".to_string()),
+            ],
+        );
+
+        assert!(line.contains("[refresh_result]"));
+        assert!(line.contains("event=\"refresh_result\""));
+        assert!(line.contains("installed=\"true\""));
+        assert!(line.contains("source=\"HostOstreeLayered\""));
+    }
+
+    #[test]
+    fn final_ui_state_log_line_can_record_applied_card_state() {
+        let line = format_runtime_log_line(
+            42,
+            "final_ui_state",
+            &[
+                ("workflow", "install".to_string()),
+                ("package", "kate".to_string()),
+                ("state", "2".to_string()),
+                ("status", "Pending reboot".to_string()),
+                ("pending", "true".to_string()),
+            ],
+        );
+
+        assert!(line.contains("[final_ui_state]"));
+        assert!(line.contains("event=\"final_ui_state\""));
+        assert!(line.contains("state=\"2\""));
+        assert!(line.contains("pending=\"true\""));
     }
 }

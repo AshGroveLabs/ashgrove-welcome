@@ -14,7 +14,7 @@ export component AppWindow inherits Window {
     in-out property <int> dev-item-state: 0;
     in-out property <int> dev-item-progress: 0;
     in-out property <string> dev-item-status-text: "Ready";
-    in-out property <string> dev-item-metadata: "Host application · kate · Development Pack validation item";
+    in-out property <string> dev-item-metadata: "Host application";
     in-out property <bool> dev-item-has-icon-image: false;
     in-out property <image> dev-item-icon-image;
     in-out property <int> dev-scheduled-update-kind: 0;
@@ -92,23 +92,23 @@ export component AppWindow inherits Window {
         }
 
         if root.selected-page == 2: PlaceholderPage {
-            title: "Gaming";
-            subtitle: "Install and configure gaming tools for AshGrove OS.";
+            title: "Gaming Pack";
+            show-subtitle: false;
         }
 
         if root.selected-page == 3: PlaceholderPage {
-            title: "Productivity";
-            subtitle: "Install productivity applications and writing tools.";
+            title: "Productivity Pack";
+            show-subtitle: false;
         }
 
         if root.selected-page == 4: PlaceholderPage {
-            title: "Cloud & Sync";
-            subtitle: "Configure cloud storage and synchronization tools.";
+            title: "Cloud & Sync Pack";
+            show-subtitle: false;
         }
 
         if root.selected-page == 5: PlaceholderPage {
-            title: "Forge Ecosystem";
-            subtitle: "Manage OpenForge, Rust-GPT, Forge Assistant, and Forge IDE.";
+            title: "Forge Ecosystem Pack";
+            show-subtitle: false;
         }
 
         if root.selected-page == 6: PlaceholderPage {

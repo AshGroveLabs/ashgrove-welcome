@@ -10,92 +10,123 @@ Roadmap milestones use three-part versions. Implementation revisions use four-pa
 
 ## v0.6.2 — Task Progress and Logging
 
-**Status:** Planned
+**Status:** Complete
 
-### Planned
+**Final accepted revision:** `v0.6.2.8`
 
-- Improve sidebar `Tasks (%)` phase tracking.
-- Improve card-level workflow messages.
-- Strengthen persistent install/uninstall workflow logging.
-- Improve failure/recovery diagnostics.
-- Preserve v0.6.1 direct install/uninstall behavior.
+### Completed
+
+- Improved visible task progress for the Development Pack Kate install/remove workflow.
+- Added rpm-ostree stdout/stderr capture, streaming progress parsing, and progress clamping so live UI progress stays below `100%` until command completion and refresh.
+- Kept compact sidebar/card UI messages concise while preserving raw rpm-ostree output in logs and command results.
+- Replaced brittle rpm-ostree JSON scanning with structured `serde_json` parsing.
+- Corrected Kate source classification so confirmed layered/removable Kate exposes red trash and unknown source evidence fails closed.
+- Corrected the product rule that `Managed` is not a normal fallback state for Kate pack cards.
+- Cleaned up pack page naming, header density, application card layout, source labels, icon sizing, and the `Install Selected` control.
+- Added persistent structured runtime log events for `progress_transition`, `command_output_line`, `command_result`, `refresh_result`, and `final_ui_state`.
+- Corrected stale milestone documentation after implementation and review cycles.
+
+### Validation
+
+- BUILD AND VALIDATE passed for `v0.6.2.8`.
+- CODE REVIEW approved `v0.6.2.8` for MILESTONE HANDOFF REVIEW.
+- MILESTONE HANDOFF REVIEW was produced and accepted by the user.
+
+### Process Note
+
+The `v0.6.2` handoff was accepted despite lacking full code-symbol-level walkthrough detail. Future code milestone handoff reviews must include code-symbol-level walkthroughs.
+
+## v0.6.2.8 — Persistent Runtime Logging Fix
+
+### Fixed
+
+- Restored persistent structured runtime log events for task progress, command output lines, command completion, post-command refresh, and final UI state.
+- Corrected milestone documentation that still described `v0.6.1.15` as the active checkpoint and `v0.6.2` as blocked before implementation.
+
+## v0.6.2.7 — Pack Page Density Cleanup
+
+### Changed
+
+- Compact pack page titles, Development Pack list spacing, application card sizing, icon sizing, and source labels.
+- Shortened current pack application descriptions so cards fit cleanly without restoring removed pack summary text.
+
+## v0.6.2.6 — Pack Page Layout Cleanup
+
+### Changed
+
+- Renamed pack content page titles to use the `<Name> Pack` pattern.
+- Removed redundant pack-page subtitle and summary-header presentation before the application list.
+- Reduced the Development Pack `Install Selected` control size while preserving its enabled, disabled, and click behavior.
+
+## v0.6.2.5 — Development Pack Source Attention State
+
+### Fixed
+
+- Stopped presenting active, non-removable Kate as a normal `Managed` Development Pack card state.
+- Active Kate now shows removal only when structured rpm-ostree booted layered/requested evidence confirms the removable layered source.
+- Active Kate without confirmed layered/removable source evidence fails closed as a source attention state with checkbox and trash hidden.
+
+### Changed
+
+- Development Pack application cards treat unknown or conflicting installed-source evidence as detection issues rather than completed managed items.
+
+## v0.6.2.2 — Task Progress UI Refinement
+
+### Fixed
+
+- Kept rpm-ostree progress detail out of compact application-card status areas.
+- Kept sidebar `Tasks (%)` progress concise and bounded during live command execution.
+- Preserved full rpm-ostree stdout/stderr detail in command results and logs.
+
+### Deferred
+
+- Installation Page / Multi-Pack Installation Queue remains future work. It should list selected applications across packs as install cards with per-application progress bars while the sidebar keeps overall `Tasks (%)` progress.
+
+## v0.6.1.15 — Application Catalog Foundation
+
+**Status:** Complete — awaiting commit and push
+
+### Added
+
+- Application catalog.
+- Pack membership by stable application ID.
+- Typed install variants.
+- Flatpak-first resolver.
+- Validated application and pack configuration.
+- Trusted manifest runtime search.
+- Lifecycle and planning models.
+
+### Changed
+
+- Kate compatibility now resolves through stable catalog identity.
+- Runtime lifecycle uses invariant-safe transitions.
+
+### Fixed
+
+- Invalid catalogs becoming accessible before validation.
+- Non-install-safe manifest lookup.
+- Unvalidated detection/display identifiers.
+- Contradictory lifecycle states.
+- `Installed` lifecycle accepting non-installed evidence.
+
+### Deferred
+
+- Multi-item Slint model and source selector.
+- Grouped installation.
+- Generic removal.
+- D-Bus progress and the Installation screen.
 
 ## v0.6.1 — Inline Pack Install Workflow
 
-**Status:** Complete
+**Status:** Historical checkpoint for current repository state
 
-### v0.6.1.0
+`v0.6.1.15` remains recorded as the application catalog foundation checkpoint. It is not the active project checkpoint for this repository state.
 
-- Implemented initial inline Development Pack install/uninstall workflow.
-- Replaced main legacy dialog-centered Development Pack path with inline page behavior.
+Remaining planned corrective revisions:
 
-### v0.6.1.1
-
-- Removed dry-run/review panel from the Development page.
-- Switched `Install Selected` to direct guarded installation.
-
-### v0.6.1.2
-
-- Fixed exhaustive workflow status handling after dry-run UI removal.
-
-### v0.6.1.3
-
-- Added visible card-level progress.
-- Updated sidebar `Tasks (%)` during direct install workflow.
-- Removed visible `Selected` / `Managed` badges from the list page.
-
-### v0.6.1.4
-
-- Corrected checkbox activation.
-- Improved Kate detection and trash-can behavior.
-
-### v0.6.1.5
-
-- Corrected host Kate detection when Kate was not active on the host.
-
-### v0.6.1.6
-
-- Normalized stale or unknown installed states so they do not incorrectly disable the available-card path.
-
-### v0.6.1.7
-
-- Added container runtime action guard to prevent package actions from running inside `forge-dev`.
-
-### v0.6.1.8
-
-- Moved install/uninstall execution off the UI thread.
-- Improved behavior when rpm-ostree crashes or fails.
-- Replaced checkbox-looking fallback icon with a `K` placeholder.
-
-### v0.6.1.9
-
-- Added pending reboot / active runtime detection behavior for rpm-ostree installs.
-- Validated Kate install and uninstall workflow.
-- Validated checkbox enabled when Kate is not installed.
-- Validated checkbox disabled and red trash can visible after Kate installation.
-- Validated red trash action removes Kate only.
-
-### v0.6.1.10
-
-- Closed F-001 through F-004: concurrent transaction prevention, safe pending rpm-ostree state, fail-closed Unknown presentation, and removability-aware UI behavior.
-
-### v0.6.1.11
-
-- Added the **System Update Scheduled** presentation for reboot-required rpm-ostree install/removal operations.
-
-### v0.6.1.12
-
-- Corrected scheduled-card replacement timing.
-- Passed manual host GUI validation for the full install/remove/reboot lifecycle.
-- Accepted the corrected code change walkthrough and received MILESTONE HANDOFF REVIEW approval.
-
-### Final Validation
-
-- Final accepted revision: `v0.6.1.12`
-- Validation result: Passed
-- Code review result: APPROVED WITH NON-BLOCKING NOTES
-- Handoff review result: APPROVED WITH NON-BLOCKING DEFERRALS
-- Non-blocking deferrals: revision-specific automated-validation documentation, manual-validation record hygiene, and rpm-ostree detection/parser technical debt
+- `v0.6.1.16 — Multi-Item Slint Model and Source Selector`
+- `v0.6.1.17 — Grouped Install Execution`
+- `v0.6.1.18 — Generic Removal and Final Foundation Closure`
 
 ## v0.6.0 — Production UI/UX Foundation
 

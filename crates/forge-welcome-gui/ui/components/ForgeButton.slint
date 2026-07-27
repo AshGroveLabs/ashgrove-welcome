@@ -3,6 +3,9 @@ export component ForgeButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary: false;
     in property <bool> enabled: true;
+    in property <length> horizontal-padding: 26px;
+    in property <length> label-size: 20px;
+    in property <length> icon-size: 30px;
 
     callback clicked;
 
@@ -22,21 +25,21 @@ export component ForgeButton inherits Rectangle {
     }
 
    if root.icon != "": HorizontalLayout {
-        padding-left: 26px;
-        padding-right: 24px;
-        spacing: 18px;
+        padding-left: root.horizontal-padding;
+        padding-right: root.horizontal-padding;
+        spacing: 14px;
 
         Text {
             text: root.icon;
             color: !root.enabled ? #777777 : root.primary ? #ff7a18 : #ffffff;
-            font-size: 30px;
+            font-size: root.icon-size;
             vertical-alignment: center;
         }
 
         Text {
             text: root.label;
             color: !root.enabled ? #777777 : root.primary ? #ff7a18 : #ffffff;
-            font-size: 20px;
+            font-size: root.label-size;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -45,7 +48,7 @@ export component ForgeButton inherits Rectangle {
     if root.icon == "": Text {
         text: root.label;
         color: !root.enabled ? #777777 : root.primary ? #ff7a18 : #ffffff;
-        font-size: 20px;
+        font-size: root.label-size;
         font-weight: 700;
 
         width: parent.width;

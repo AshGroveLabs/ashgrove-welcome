@@ -15,17 +15,16 @@ export component PackItemCard inherits Rectangle {
     callback toggled;
     callback remove-requested;
 
-    height: 148px;
+    height: 112px;
     border-radius: 14px;
     background: #1c1c1c;
     border-width: 1px;
     border-color: root.item-state == 3 ? #ff7a18 : root.installed ? #4a4a4a : root.selected ? #ff7a18 : #333333;
 
-    // Front checkbox. Available items can be selected; installed items keep
-    // the empty checkbox shape as a stable visual anchor but cannot be toggled.
-    Rectangle {
-        x: 18px;
-        y: 62px;
+    // Front checkbox. Only not-installed items expose install selection.
+    if !root.installed: Rectangle {
+        x: 14px;
+        y: 44px;
         width: 24px;
         height: 24px;
         border-radius: 6px;
@@ -59,21 +58,21 @@ export component PackItemCard inherits Rectangle {
     }
 
     Rectangle {
-        x: 62px;
-        y: 42px;
-        width: 64px;
-        height: 64px;
-        border-radius: 14px;
+        x: 50px;
+        y: 32px;
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
         background: #242424;
         border-width: 1px;
         border-color: #3a3a3a;
         clip: true;
 
         if root.has-icon-image: Image {
-            x: 10px;
-            y: 10px;
-            width: parent.width - 20px;
-            height: parent.height - 20px;
+            x: 8px;
+            y: 8px;
+            width: parent.width - 16px;
+            height: parent.height - 16px;
             source: root.icon-image;
             image-fit: contain;
         }
@@ -85,7 +84,7 @@ export component PackItemCard inherits Rectangle {
             width: parent.width;
             height: parent.height;
             color: #ff7a18;
-            font-size: 30px;
+            font-size: 24px;
             font-weight: 800;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -93,32 +92,31 @@ export component PackItemCard inherits Rectangle {
     }
 
     Text {
-        x: 148px;
-        y: 28px;
-        width: parent.width - 370px;
+        x: 116px;
+        y: 18px;
+        width: parent.width - 320px;
         text: root.title;
         color: #ffffff;
-        font-size: 22px;
+        font-size: 20px;
         font-weight: 800;
         overflow: elide;
     }
 
     Text {
-        x: 148px;
-        y: 60px;
-        width: parent.width - 370px;
-        height: 42px;
+        x: 116px;
+        y: 46px;
+        width: parent.width - 320px;
+        height: 22px;
         text: root.description;
         color: #cfcfcf;
         font-size: 14px;
-        wrap: word-wrap;
         overflow: elide;
     }
 
     Text {
-        x: 148px;
-        y: 108px;
-        width: parent.width - 370px;
+        x: 116px;
+        y: 76px;
+        width: parent.width - 320px;
         height: 20px;
         text: root.metadata;
         color: #8d8d8d;
@@ -128,27 +126,15 @@ export component PackItemCard inherits Rectangle {
 
     // Display the card-level progress meter only while install/uninstall is active.
     if root.item-state == 3: Rectangle {
-        x: parent.width - 188px;
-        y: 53px;
-        width: 148px;
-        height: 42px;
+        x: parent.width - 172px;
+        y: 52px;
+        width: 132px;
+        height: 8px;
         background: transparent;
-
-        Text {
-            x: 0px;
-            y: 0px;
-            width: parent.width;
-            text: root.status-text;
-            color: #ffffff;
-            font-size: 12px;
-            font-weight: 700;
-            horizontal-alignment: center;
-            overflow: elide;
-        }
 
         Rectangle {
             x: 0px;
-            y: 24px;
+            y: 0px;
             width: parent.width;
             height: 8px;
             border-radius: 4px;
@@ -178,7 +164,7 @@ export component PackItemCard inherits Rectangle {
     // Selected/Available badges are intentionally not rendered.
     if root.item-state == 5: Rectangle {
         x: parent.width - 130px;
-        y: 55px;
+        y: 37px;
         width: 90px;
         height: 38px;
         border-radius: 19px;
@@ -203,7 +189,7 @@ export component PackItemCard inherits Rectangle {
 
     if root.item-state != 3 && root.item-state != 5 && root.installed && !root.removable: Rectangle {
         x: parent.width - 154px;
-        y: 55px;
+        y: 37px;
         width: 114px;
         height: 38px;
         border-radius: 19px;
@@ -229,7 +215,7 @@ export component PackItemCard inherits Rectangle {
     // Only supported, source-aware installed applications expose removal.
     if root.actions-enabled && root.item-state != 3 && root.item-state != 5 && root.installed && root.removable: Rectangle {
         x: parent.width - 106px;
-        y: 50px;
+        y: 32px;
         width: 54px;
         height: 48px;
         border-radius: 12px;

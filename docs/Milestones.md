@@ -1,13 +1,13 @@
 ---
-modified: 2026-07-14
+modified: 2026-07-27
 type: project-milestones
 project: AshGrove Welcome
 legacy_project_name: Forge Welcome
-status: active
-last_completed_milestone: v0.6.1 — Inline Pack Install Workflow
-active_roadmap_milestone: v0.6.2 — Task Progress and Logging
-current_implementation_revision: Not created
-final_accepted_revision: v0.6.1.12
+status: milestone-complete
+last_completed_milestone: v0.6.2 — Task Progress and Logging
+final_accepted_revision: v0.6.2.8
+next_planned_milestone: v0.6.3 — Multi-Item Pack Page Preparation
+next_workflow_action: COMMIT / PUSH
 ---
 
 # AshGrove Welcome Milestones
@@ -25,9 +25,9 @@ v0.6.3
 Implementation revisions use four-part versions:
 
 ```text
-v0.6.1.0
-v0.6.1.1
-v0.6.1.2
+v0.6.2.0
+v0.6.2.7
+v0.6.2.8
 ```
 
 Revision zero is the initial implementation of the active roadmap milestone. Fixes increment only the final revision number and do not consume the next roadmap milestone.
@@ -36,17 +36,64 @@ Revision zero is the initial implementation of the active roadmap milestone. Fix
 
 | Item | Value |
 |---|---|
-| Last completed roadmap milestone | `v0.6.1 — Inline Pack Install Workflow` |
-| Final accepted revision | `v0.6.1.12` |
-| Manual host GUI validation | Full install/remove/reboot lifecycle passed |
-| Code review result | APPROVED WITH NON-BLOCKING NOTES |
-| Handoff review result | APPROVED WITH NON-BLOCKING DEFERRALS |
-| Active roadmap milestone | `v0.6.2 — Task Progress and Logging` |
-| Current implementation revision | `Not created` |
-| Current workflow state | Milestone complete; Git commit and push pending |
-| Next recommended prompt | `PROJECT STATUS`, then `IMPLEMENT PROJECT MILESTONE` after commit/push |
+| Last completed milestone | `v0.6.2 — Task Progress and Logging` |
+| Final accepted revision | `v0.6.2.8` |
+| Milestone status | Complete |
+| Baseline commit | `ce8ce6779beddef8780dd2e6a8039d6fa4c0807b` |
+| Commit / push | Pending |
+| Next legal workflow action | `COMMIT / PUSH` |
+| Next planned milestone | `v0.6.3 — Multi-Item Pack Page Preparation` |
+| v0.6.3 status | Not started |
 
 # Completed Milestones
+
+## v0.6.2 — Task Progress and Logging
+
+**Status:** Complete
+
+**Final accepted revision:** `v0.6.2.8`
+
+### Summary
+
+- Improved visible task progress for real Development Pack package workflows.
+- Added rpm-ostree stdout/stderr capture and progress parsing.
+- Added persistent structured runtime logs for progress, command output, command result, refresh result, and final UI state.
+- Preserved source-aware Kate install/remove behavior and safety gates.
+- Corrected Kate source classification and fail-closed unknown-source behavior.
+- Cleaned up Development Pack and placeholder pack page layout density.
+- Updated stale milestone documentation.
+
+### Implementation Revision Chain
+
+| Revision | Result | Notes |
+|---|---|---|
+| `v0.6.2.0` | Failed validation | Initial task-phase model; real workflow progress moved only `0 -> 55 -> 100`. |
+| `v0.6.2.1` | Superseded | Added rpm-ostree stdout/stderr streaming and progress parsing. |
+| `v0.6.2.2` | Superseded | Kept sidebar/card text concise while raw rpm-ostree output remained in logs. |
+| `v0.6.2.3` | Failed validation | Attempted Kate source-classification fix; red trash still did not display. |
+| `v0.6.2.4` | Superseded | Replaced brittle rpm-ostree JSON scanning with structured `serde_json` parsing. |
+| `v0.6.2.5` | Validated behavior to preserve | Corrected product rule so `Managed` is not a normal fallback for Kate pack cards. |
+| `v0.6.2.6` | Validated behavior to preserve | Cleaned up pack page layout and pack title consistency. |
+| `v0.6.2.7` | CODE REVIEW blocked | Compact card/page layout was accepted, but persistent structured logs and docs were incomplete. |
+| `v0.6.2.8` | Final accepted | Added persistent structured runtime log events and corrected stale milestone documentation. |
+
+### Validation Result
+
+- BUILD AND VALIDATE passed.
+- CODE REVIEW approved `v0.6.2.8` for MILESTONE HANDOFF REVIEW.
+- MILESTONE HANDOFF REVIEW was produced and accepted by the user.
+
+### Process Note
+
+The `v0.6.2` handoff was accepted despite lacking full code-symbol-level walkthrough detail. Future code milestone handoff reviews must include code-symbol-level walkthroughs.
+
+### Non-Blocking Deferrals
+
+- rpm-ostree progress parsing may still be line-fragment fragile.
+- Workflow orchestration remains concentrated in GUI `main.rs`.
+- Typed rpm-ostree structs are deferred.
+- Full rpm-ostree D-Bus transaction client is deferred.
+- Installation Page / Multi-Pack Installation Queue is deferred.
 
 ## v0.6.0 — Production UI/UX Foundation
 
@@ -60,97 +107,18 @@ Summary:
 - Moved `Tasks (%)` into the sidebar.
 - Added source-aware detection and uninstall preparation.
 
+# Historical Roadmap Context
+
 ## v0.6.1 — Inline Pack Install Workflow
 
-**Status:** Complete
+**Status:** Historical checkpoint for current repository state
 
-### Roadmap Milestone
+`v0.6.1.15 — Application Catalog Foundation` remains recorded as prior foundation work. It is not the active milestone for this completion state.
 
-- Version: `v0.6.1`
-- Objective: Replace the temporary legacy dialog path with inline Development Pack install/uninstall workflow.
-- Status: Complete
+# Planned Milestones
 
-### Implementation Revisions
+## v0.6.3 — Multi-Item Pack Page Preparation
 
-| Revision | Type | Description | Validation | Artifact |
-|---|---|---|---|---|
-| `v0.6.1.0` | Initial implementation | Replaced dialog-centered path with inline Development Pack workflow foundation. | Superseded by fixes | Legacy/generated bundle |
-| `v0.6.1.1` | Fix | Removed dry-run/review flow and switched to direct install behavior. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.2` | Fix | Added exhaustive handling for remaining dry-run workflow enum state. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.3` | Fix | Added visible card progress and sidebar `Tasks (%)` updates. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.4` | Fix | Corrected checkbox and trash-can behavior around Kate detection. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.5` | Fix | Corrected host Kate detection when host did not have Kate active. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.6` | Fix | Normalized stale/unknown installed state handling. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.7` | Fix | Added container runtime action guard. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.8` | Fix | Moved install execution off UI thread and reduced rpm-ostree progress-output crash risk. | Superseded by later fixes | Legacy/generated bundle |
-| `v0.6.1.9` | Fix | Added pending reboot / final validated install-source behavior. | Passed | `ashgrove_welcome_v0.6.1.9.zip` |
-| `v0.6.1.10` | Fix | Closed F-001 through F-004. | Automated validation passed; clippy warnings recorded | Documentation evidence |
-| `v0.6.1.11` | Fix | Added direction-specific System Update Scheduled presentation. | Automated validation passed | Documentation evidence |
-| `v0.6.1.12` | Fix | Corrected scheduled-card replacement timing. | Full host GUI lifecycle passed | Documentation evidence |
+**Status:** Planned; not started.
 
-### Final Acceptance
-
-| Item | Result |
-|---|---|
-| Initial implementation revision | `v0.6.1.0` |
-| Final accepted revision | `v0.6.1.12` |
-| Corrective revision chain | `v0.6.1.9` → `v0.6.1.10` → `v0.6.1.11` → `v0.6.1.12` |
-| Manual validation | Full host GUI lifecycle passed |
-| Validation result | Accepted with documentation deferrals |
-| Code review result | APPROVED WITH NON-BLOCKING NOTES |
-| Handoff review result | APPROVED WITH NON-BLOCKING DEFERRALS |
-| Git commit state | Pending |
-| Git push state | Pending |
-
-### Completed Acceptance Criteria
-
-- Main Development Pack install flow no longer depends on the legacy modal dialog.
-- Kate installs directly from `Install Selected`.
-- Installed items are not reinstalled by `Install Selected`.
-- Kate uninstall path is routed through per-item red trash action.
-- Red trash action removes Kate only.
-- Checkbox is enabled when Kate is not installed.
-- Checkbox is disabled when Kate is installed.
-- Source-aware install/uninstall behavior is preserved.
-- Sidebar `Tasks (%)` updates during workflow.
-- Item state refreshes after install/uninstall.
-- Container runtime action guard blocks accidental package actions from `forge-dev`.
-- Real Gaming Pack execution remains disabled.
-- No arbitrary shell execution was introduced.
-- Scheduled rpm-ostree install/removal replaces Kate with a non-actionable **System Update Scheduled** card that names the operation, requires reboot, and reports 100% task progress.
-- Blocking findings `F-001` through `F-004` are closed.
-
-### Non-Blocking Deferrals
-
-- Missing or incomplete revision-specific automated-validation documentation.
-- Manual-validation record hygiene.
-- rpm-ostree detection/parser technical debt.
-
-# Current / Planned Milestones
-
-## v0.6.2 — Task Progress and Logging
-
-**Status:** Planned / next
-
-Implementation must not start until the completed v0.6.1 work is committed, pushed, and the source is refreshed.
-
-### Roadmap Milestone
-
-- Version: `v0.6.2`
-- Objective: Improve visible task progress, workflow logging, and diagnostic evidence for install/uninstall workflows.
-- Status: Planned
-
-### Implementation Revisions
-
-| Revision | Type | Description | Validation | Artifact |
-|---|---|---|---|---|
-| Not created | Initial implementation | Not started | Not run | None |
-
-### Planned Work
-
-- Improve sidebar `Tasks (%)` accuracy and state transitions.
-- Improve item-level workflow messages.
-- Strengthen persistent log records for install/uninstall workflows.
-- Record command start, command completion, exit status, refresh result, and runtime environment.
-- Add clearer failure and recovery messages.
-- Keep host GUI validation separate from `forge-dev` build validation.
+Do not start `v0.6.3` until `v0.6.2` commit/push is complete and a refreshed PROJECT STATUS authorizes the next milestone.

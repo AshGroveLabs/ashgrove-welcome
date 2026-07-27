@@ -1,0 +1,71 @@
+schema_version: 1
+applications:
+  - id: kate
+    name: Kate
+    description: Advanced KDE text editor for development
+    icon: org.kde.kate
+    enabled: true
+    order: 10
+    executable: kate
+    detection:
+      rpm_packages:
+        - kate
+      flatpak_ids:
+        - org.kde.kate
+      desktop_ids:
+        - org.kde.kate.desktop
+        - kate.desktop
+      executables:
+        - kate
+    removal_policy: removable-when-user-installed
+    metadata:
+      validation_role: Development Pack validation item
+    tags:
+      - development
+      - editor
+    install_variants:
+      - id: flatpak-system
+        backend: flatpak
+        scope: system
+        identifier: org.kde.kate
+        priority: 10
+        recommended: true
+        enabled: true
+        reboot_required: false
+      - id: host-package
+        backend: rpm-ostree
+        identifier: kate
+        priority: 20
+        recommended: false
+        enabled: true
+        reboot_required: true
+
+  - id: kcolorchooser
+    name: KColorChooser
+    description: KDE color picker utility for selecting and inspecting colors.
+    icon: org.kde.kcolorchooser
+    enabled: false
+    order: 20
+    removal_policy: removable-when-user-installed
+    metadata:
+      disabled_reason: Backend identifiers require host or repository validation before this application becomes actionable.
+      validation_role: Future Development Pack catalog validation item
+    tags:
+      - development
+      - utility
+    install_variants: []
+
+  - id: aisleriot
+    name: Aisleriot
+    description: Solitaire card game collection.
+    icon: org.gnome.Aisleriot
+    enabled: false
+    order: 30
+    removal_policy: removable-when-user-installed
+    metadata:
+      disabled_reason: Backend identifiers require host or repository validation before this application becomes actionable.
+      validation_role: Future Development Pack catalog validation item
+    tags:
+      - gaming
+      - validation
+    install_variants: []

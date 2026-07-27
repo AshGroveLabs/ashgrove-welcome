@@ -12,11 +12,11 @@ use std::{
 };
 
 use forge_welcome_core::{
-    CommandResult, CommandSpec, CommandStatus, DetectionProbeLogEntry, DevelopmentToolStatus,
-    ExecutionBoundary, ExecutionMode, ExecutionPlan, ExecutionReport, ExecutionStep,
-    ExecutionWorkflowStatus, InstallSource, Pack, create_confirmed_development_execution_plan,
-    create_install_plan, detect_development_pack_status, execute_execution_plan,
-    load_pack_from_file,
+    CommandProgressEvent, CommandResult, CommandSpec, CommandStatus, DetectionProbeLogEntry,
+    DevelopmentToolStatus, ExecutionBoundary, ExecutionMode, ExecutionPlan, ExecutionReport,
+    ExecutionStep, ExecutionWorkflowStatus, InstallSource, Pack,
+    create_confirmed_development_execution_plan, create_install_plan,
+    detect_development_pack_status, execute_execution_plan_with_progress, load_pack_from_file,
 };
 
 slint::include_modules!();
@@ -31,6 +31,7 @@ const ITEM_STATE_UNKNOWN: i32 = 6;
 
 const KATE_PACKAGE_NAME: &str = "kate";
 const KATE_FLATPAK_APP_ID: &str = "org.kde.kate";
+const TASK_PROGRESS_DETAIL_MAX_CHARS: usize = 32;
 
 #[derive(Debug, Clone, Copy)]
 enum PackId {
@@ -98,6 +99,12 @@ struct TransactionResult {
 struct TransactionItem {
     name: String,
     detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkflowKind {
+    Install,
+    Uninstall,
 }
 
 #[derive(Clone, Default)]
@@ -362,6 +369,42 @@ fn append_log_event(event: &str, detail: &str) {
     }
 }
 
+fn append_structured_log_event(event: &str, fields: &[(&str, String)]) {
+    append_log_event(event, &format_log_fields(event, fields));
+}
+
+fn format_log_fields(event: &str, fields: &[(&str, String)]) -> String {
+    let mut detail = format!("event={}", json_log_string(event));
+
+    for (key, value) in fields {
+        detail.push(' ');
+        detail.push_str(key);
+        detail.push('=');
+        detail.push_str(&json_log_string(value));
+    }
+
+    detail
+}
+
+fn json_log_string(value: &str) -> String {
+    let mut escaped = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped.push('"');
+    escaped
+}
+
 fn set_development_item_icon(app: &AppWindow) {
     let icon_names = kde_kate_icon_names();
 
@@ -557,7 +600,173 @@ fn set_task_progress(app: &AppWindow, percent: i32, detail: &str) {
     app.set_task_progress_active(true);
     app.set_task_progress_percent(percent);
     app.set_task_progress_title(format!("Tasks ({percent}%)").into());
-    app.set_task_progress_detail(detail.into());
+    app.set_task_progress_detail(concise_task_progress_detail(detail).into());
+}
+
+fn concise_task_progress_detail(detail: &str) -> String {
+    truncate_sidebar_message(normalize_task_progress_detail(detail))
+}
+
+fn normalize_task_progress_detail(detail: &str) -> &'static str {
+    let normalized = detail
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+
+    if normalized.is_empty() {
+        "Working"
+    } else if normalized.contains("fail")
+        || normalized.contains("error")
+        || normalized.contains("blocked")
+    {
+        "Failed"
+    } else if normalized.contains("reboot") {
+        "Reboot required"
+    } else if normalized.contains("complete") || normalized.contains("succeeded") {
+        "Completed"
+    } else if normalized.contains("rpm-ostree") && normalized.contains("start") {
+        "Starting rpm-ostree"
+    } else if normalized.contains("refresh") {
+        "Refreshing"
+    } else if normalized.contains("staging") {
+        "Staging deployment"
+    } else if normalized.contains("writing") {
+        "Writing deployment"
+    } else if normalized.contains("finaliz") || normalized.contains("cleanup") {
+        "Finalizing"
+    } else if normalized.contains("resolving") || normalized.contains("dependenc") {
+        "Resolving dependencies"
+    } else if normalized.contains("download") || normalized.contains("receiv") {
+        "Downloading"
+    } else if normalized.contains("prepar") || normalized.contains("queued") {
+        "Preparing"
+    } else if normalized.contains("install")
+        || normalized.contains("remov")
+        || normalized.contains("uninstall")
+        || normalized.contains("apply")
+        || normalized.contains("transaction")
+        || normalized.contains("running")
+        || normalized.contains("execute")
+    {
+        "Applying changes"
+    } else {
+        "Working"
+    }
+}
+
+fn truncate_sidebar_message(message: &str) -> String {
+    if message.chars().count() <= TASK_PROGRESS_DETAIL_MAX_CHARS {
+        return message.to_string();
+    }
+
+    let visible_chars = TASK_PROGRESS_DETAIL_MAX_CHARS.saturating_sub(3);
+    let mut truncated = message.chars().take(visible_chars).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+fn bounded_live_progress_percent(event_percent: i32, last_percent: i32) -> i32 {
+    event_percent.clamp(0, 98).max(last_percent.clamp(0, 98))
+}
+
+fn command_progress_callback(
+    workflow: WorkflowKind,
+    app_weak: slint::Weak<AppWindow>,
+    gate: TransactionGate,
+    initial_percent: i32,
+) -> impl FnMut(CommandProgressEvent) + Send + 'static {
+    let mut last_percent = initial_percent.clamp(0, 98);
+    let mut last_status = String::new();
+
+    move |event| {
+        let percent = bounded_live_progress_percent(event.percent, last_percent);
+        let status = workflow_progress_status(workflow, event.status);
+
+        if percent == last_percent && status == last_status {
+            return;
+        }
+
+        last_percent = percent;
+        last_status = status.clone();
+
+        let app_weak = app_weak.clone();
+        let gate = gate.clone();
+        let dispatch = slint::invoke_from_event_loop(move || {
+            if !gate.is_active() {
+                return;
+            }
+
+            if let Some(app) = app_weak.upgrade() {
+                apply_command_progress_event(&app, workflow, percent, &status);
+            }
+        });
+
+        if let Err(error) = dispatch {
+            append_log_event(
+                "progress_dispatch_failed",
+                &format!("Failed to dispatch rpm-ostree progress event: {error:?}"),
+            );
+        }
+    }
+}
+
+fn workflow_progress_status(_workflow: WorkflowKind, status: &str) -> String {
+    concise_task_progress_detail(status)
+}
+
+fn apply_command_progress_event(
+    app: &AppWindow,
+    workflow: WorkflowKind,
+    percent: i32,
+    status: &str,
+) {
+    let percent = percent.clamp(0, 98);
+    set_task_progress(app, percent, status);
+    app.set_dev_item_progress(percent);
+    app.set_install_progress_message(status.into());
+    app.set_dev_item_status_text(item_status_for_progress(workflow, status).into());
+}
+
+fn log_final_ui_state(app: &AppWindow, workflow: WorkflowKind) {
+    append_structured_log_event(
+        "final_ui_state",
+        &[
+            ("workflow", workflow.log_label().to_string()),
+            ("package", KATE_PACKAGE_NAME.to_string()),
+            ("installed", app.get_dev_item_installed().to_string()),
+            ("removable", app.get_dev_item_removable().to_string()),
+            ("selected", app.get_dev_item_selected().to_string()),
+            (
+                "pending",
+                (app.get_dev_scheduled_update_kind() != 0).to_string(),
+            ),
+            ("state", app.get_dev_item_state().to_string()),
+            ("progress", app.get_dev_item_progress().to_string()),
+            ("status", app.get_dev_item_status_text().to_string()),
+            ("metadata", app.get_dev_item_metadata().to_string()),
+        ],
+    );
+}
+
+impl WorkflowKind {
+    fn log_label(self) -> &'static str {
+        match self {
+            Self::Install => "install",
+            Self::Uninstall => "uninstall",
+        }
+    }
+}
+
+fn item_status_for_progress(workflow: WorkflowKind, status: &str) -> &'static str {
+    match status {
+        "Reboot required" => "Waiting for reboot…",
+        "Failed" => "Failed",
+        _ => match workflow {
+            WorkflowKind::Install => "Installing…",
+            WorkflowKind::Uninstall => "Removing…",
+        },
+    }
 }
 
 fn begin_transaction(app: &AppWindow, gate: &TransactionGate) -> bool {
@@ -590,8 +799,8 @@ fn begin_development_install(app: &AppWindow, gate: TransactionGate) {
 
     app.set_dev_item_state(ITEM_STATE_INSTALLING);
     app.set_dev_item_progress(0);
-    app.set_dev_item_status_text("Queued".into());
-    set_task_progress(app, 0, "Kate install queued");
+    app.set_dev_item_status_text("Installing…".into());
+    set_task_progress(app, 5, "Kate install queued");
     app.set_last_action_text("Last action: Starting Kate installation.".into());
 
     append_log_event(
@@ -608,13 +817,13 @@ fn schedule_development_install(app: &AppWindow, gate: TransactionGate) {
 
     slint::Timer::single_shot(Duration::from_millis(150), move || {
         if let Some(app) = app_weak.upgrade() {
-            app.set_dev_item_progress(25);
-            app.set_dev_item_status_text("Preparing".into());
+            app.set_dev_item_progress(15);
+            app.set_dev_item_status_text("Installing…".into());
             app.set_install_progress_current(1);
             app.set_install_progress_message(
                 "Preparing guarded Development Pack installation.".into(),
             );
-            set_task_progress(&app, 25, "Preparing Kate install");
+            set_task_progress(&app, 15, "Preparing Kate install");
 
             let app_weak = app.as_weak();
             let second_timer_gate = first_timer_gate.clone();
@@ -648,8 +857,8 @@ fn begin_kate_uninstall(app: &AppWindow, gate: TransactionGate) {
 
     app.set_dev_item_state(ITEM_STATE_INSTALLING);
     app.set_dev_item_progress(0);
-    app.set_dev_item_status_text("Queued".into());
-    set_task_progress(app, 0, "Kate removal queued");
+    app.set_dev_item_status_text("Removing…".into());
+    set_task_progress(app, 5, "Kate removal queued");
     app.set_last_action_text("Last action: Starting Kate removal.".into());
 
     append_log_event(
@@ -666,11 +875,11 @@ fn schedule_kate_uninstall(app: &AppWindow, gate: TransactionGate) {
 
     slint::Timer::single_shot(Duration::from_millis(150), move || {
         if let Some(app) = app_weak.upgrade() {
-            app.set_dev_item_progress(25);
-            app.set_dev_item_status_text("Preparing".into());
+            app.set_dev_item_progress(15);
+            app.set_dev_item_status_text("Removing…".into());
             app.set_install_progress_current(1);
             app.set_install_progress_message("Preparing guarded Kate uninstall.".into());
-            set_task_progress(&app, 25, "Preparing Kate removal");
+            set_task_progress(&app, 15, "Preparing Kate removal");
 
             let app_weak = app.as_weak();
             let second_timer_gate = first_timer_gate.clone();
@@ -698,9 +907,9 @@ fn run_development_install(app: &AppWindow, gate: TransactionGate) {
     app.set_active_pack_name(pack_id.display_name().into());
 
     app.set_dev_item_state(ITEM_STATE_INSTALLING);
-    app.set_dev_item_progress(50);
-    app.set_dev_item_status_text("Installing".into());
-    set_task_progress(app, 50, "Installing Kate");
+    app.set_dev_item_progress(20);
+    app.set_dev_item_status_text("Installing…".into());
+    set_task_progress(app, 20, "Starting rpm-ostree");
     append_log_event(
         "real_install_started",
         "Development Pack real install started directly from Install Selected",
@@ -717,13 +926,21 @@ fn run_development_install(app: &AppWindow, gate: TransactionGate) {
                 "Development Pack install command moved off the Slint event loop",
             );
 
-            let result = std::panic::catch_unwind(|| build_real_install_result(pack_id))
-                .unwrap_or_else(|_| {
-                    failed_install_result(
-                        "Installation worker",
-                        "The installation worker stopped unexpectedly before returning a result.",
-                    )
-                });
+            let progress_callback = command_progress_callback(
+                WorkflowKind::Install,
+                app_weak.clone(),
+                worker_gate.clone(),
+                20,
+            );
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                build_real_install_result(pack_id, progress_callback)
+            }))
+            .unwrap_or_else(|_| {
+                failed_install_result(
+                    "Installation worker",
+                    "The installation worker stopped unexpectedly before returning a result.",
+                )
+            });
 
             let completion_gate = worker_gate.clone();
             let dispatch = slint::invoke_from_event_loop(move || {
@@ -763,7 +980,7 @@ fn complete_development_install(app: &AppWindow, pack_id: PackId, result: Transa
     let rendered_result = render_transaction_result(&result);
 
     app.set_dev_item_progress(75);
-    app.set_dev_item_status_text("Refreshing".into());
+    app.set_dev_item_status_text("Installing…".into());
     set_task_progress(app, 75, "Refreshing system update state");
     app.set_install_progress_current(3);
     app.set_install_progress_message("Installation workflow completed.".into());
@@ -820,14 +1037,17 @@ fn complete_development_install(app: &AppWindow, pack_id: PackId, result: Transa
             .into(),
         );
     } else {
+        let failed_progress = app.get_task_progress_percent().clamp(0, 98);
         app.set_dev_item_state(ITEM_STATE_FAILED);
-        app.set_dev_item_progress(100);
+        app.set_dev_item_progress(failed_progress);
         app.set_dev_item_status_text("Failed".into());
-        set_task_progress(app, 100, "Failed");
+        set_task_progress(app, failed_progress, "Failed");
         app.set_last_action_text(
             "Last action: Development Pack installation completed with failures.".into(),
         );
     }
+
+    log_final_ui_state(app, WorkflowKind::Install);
 }
 
 fn run_kate_uninstall(app: &AppWindow, gate: TransactionGate) {
@@ -837,9 +1057,9 @@ fn run_kate_uninstall(app: &AppWindow, gate: TransactionGate) {
     app.set_install_progress_message("Running guarded Kate uninstall.".into());
 
     app.set_dev_item_state(ITEM_STATE_INSTALLING);
-    app.set_dev_item_progress(50);
-    app.set_dev_item_status_text("Removing".into());
-    set_task_progress(app, 50, "Removing Kate");
+    app.set_dev_item_progress(20);
+    app.set_dev_item_status_text("Removing…".into());
+    set_task_progress(app, 20, "Starting rpm-ostree");
     append_log_event(
         "uninstall_started",
         "Kate uninstall started directly from trash action",
@@ -856,13 +1076,21 @@ fn run_kate_uninstall(app: &AppWindow, gate: TransactionGate) {
                 "Kate uninstall command moved off the Slint event loop",
             );
 
-            let result =
-                std::panic::catch_unwind(build_kate_real_uninstall_result).unwrap_or_else(|_| {
-                    failed_uninstall_result(
-                        "Uninstall worker",
-                        "The uninstall worker stopped unexpectedly before returning a result.",
-                    )
-                });
+            let progress_callback = command_progress_callback(
+                WorkflowKind::Uninstall,
+                app_weak.clone(),
+                worker_gate.clone(),
+                20,
+            );
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                build_kate_real_uninstall_result(progress_callback)
+            }))
+            .unwrap_or_else(|_| {
+                failed_uninstall_result(
+                    "Uninstall worker",
+                    "The uninstall worker stopped unexpectedly before returning a result.",
+                )
+            });
 
             let completion_gate = worker_gate.clone();
             let dispatch = slint::invoke_from_event_loop(move || {
@@ -905,7 +1133,7 @@ fn complete_kate_uninstall(app: &AppWindow, result: TransactionResult) {
     app.set_install_progress_message("Kate uninstall workflow completed.".into());
     app.set_install_preview_text(rendered_result.clone().into());
     app.set_dev_item_progress(75);
-    app.set_dev_item_status_text("Refreshing".into());
+    app.set_dev_item_status_text("Removing…".into());
     set_task_progress(app, 75, "Refreshing system update state");
     app.set_install_state(if command_success { 4 } else { 5 });
 
@@ -962,11 +1190,15 @@ fn complete_kate_uninstall(app: &AppWindow, result: TransactionResult) {
             .into(),
         );
     } else {
+        let failed_progress = app.get_task_progress_percent().clamp(0, 98);
         app.set_dev_item_state(ITEM_STATE_FAILED);
         app.set_dev_item_status_text("Failed".into());
-        set_task_progress(app, 100, "Uninstall failed");
+        app.set_dev_item_progress(failed_progress);
+        set_task_progress(app, failed_progress, "Uninstall failed");
         app.set_last_action_text("Last action: Kate uninstall command failed.".into());
     }
+
+    log_final_ui_state(app, WorkflowKind::Uninstall);
 }
 
 fn refresh_pack_status(app: &AppWindow, pack_id: PackId) {
@@ -1109,35 +1341,43 @@ fn build_development_item_presentation(
         InstallSource::PendingOstreeRemoval => 2,
         _ => 0,
     };
-    let unknown = install_source == InstallSource::Unknown;
     let active_installed = kate_status.map(|tool| tool.installed).unwrap_or(false);
+    let unknown = install_source == InstallSource::Unknown;
+    let source_conflict = active_installed
+        && !matches!(
+            install_source,
+            InstallSource::HostOstreeLayered
+                | InstallSource::PendingOstreeInstall
+                | InstallSource::PendingOstreeRemoval
+                | InstallSource::NotInstalled
+        );
+    let problem_state = unknown || source_conflict;
 
-    // Pending and unknown states are presented as occupied/non-actionable so
+    // Pending, unknown, and source-conflict states are occupied/non-actionable so
     // neither the checkbox nor Install Selected can mutate an ambiguous system.
-    let installed = active_installed || pending_reboot || unknown;
+    let installed = active_installed || pending_reboot || problem_state;
     let removable = active_installed
         && kate_status.map(|tool| tool.removable).unwrap_or(false)
+        && install_source == InstallSource::HostOstreeLayered
         && !pending_reboot
-        && !unknown;
+        && !problem_state;
     let selected = !installed && current_selection;
 
     let (state, progress, status_text) = if pending_reboot {
         (ITEM_STATE_PENDING, 100, "Pending reboot")
-    } else if unknown {
-        (ITEM_STATE_UNKNOWN, 100, "Unavailable")
+    } else if problem_state {
+        (ITEM_STATE_UNKNOWN, 100, "Source unknown")
     } else if active_installed {
-        (
-            ITEM_STATE_INSTALLED,
-            100,
-            if removable { "Installed" } else { "Managed" },
-        )
+        (ITEM_STATE_INSTALLED, 100, "Installed")
     } else if selected {
         (ITEM_STATE_SELECTED, 0, "Selected")
     } else {
         (ITEM_STATE_AVAILABLE, 0, "Available")
     };
 
-    let metadata = if installed {
+    let metadata = if problem_state {
+        "Installed · source needs attention · uninstall disabled".to_string()
+    } else if installed {
         kate_status
             .and_then(|tool| tool.version.clone())
             .unwrap_or_else(|| install_source.ui_metadata().to_string())
@@ -1219,6 +1459,32 @@ fn apply_pack_refresh_result(app: &AppWindow, refresh_result: &PackRefreshResult
                     refresh_result.item_detection_detail
                 ),
             );
+
+            append_structured_log_event(
+                "refresh_result",
+                &[
+                    (
+                        "workflow",
+                        refresh_result.pack_id.display_name().to_string(),
+                    ),
+                    ("package", KATE_PACKAGE_NAME.to_string()),
+                    ("installed", refresh_result.item_installed.to_string()),
+                    ("removable", refresh_result.item_removable.to_string()),
+                    ("selected", refresh_result.item_selected.to_string()),
+                    (
+                        "pending",
+                        (refresh_result.scheduled_update_kind != 0).to_string(),
+                    ),
+                    (
+                        "source",
+                        format!("{:?}", refresh_result.item_install_source),
+                    ),
+                    ("state", refresh_result.item_state.to_string()),
+                    ("progress", refresh_result.item_progress.to_string()),
+                    ("status", refresh_result.item_status_text.clone()),
+                    ("metadata", refresh_result.item_metadata.clone()),
+                ],
+            );
         }
     }
 }
@@ -1234,9 +1500,12 @@ fn log_pack_item_detection_plan(pack_id: PackId, item_name: &str) {
     );
 }
 
-fn build_real_install_result(pack_id: PackId) -> TransactionResult {
+fn build_real_install_result<F>(pack_id: PackId, progress_callback: F) -> TransactionResult
+where
+    F: FnMut(CommandProgressEvent),
+{
     match pack_id {
-        PackId::Development => build_development_real_install_result(),
+        PackId::Development => build_development_real_install_result(progress_callback),
     }
 }
 
@@ -1277,7 +1546,10 @@ fn failed_install_result(name: &str, detail: &str) -> TransactionResult {
     }
 }
 
-fn build_development_real_install_result() -> TransactionResult {
+fn build_development_real_install_result<F>(progress_callback: F) -> TransactionResult
+where
+    F: FnMut(CommandProgressEvent),
+{
     if is_container_runtime() {
         append_log_event(
             "runtime_action_blocked",
@@ -1308,7 +1580,7 @@ fn build_development_real_install_result() -> TransactionResult {
 
     let install_plan = create_install_plan(&pack);
     let execution_plan = create_confirmed_development_execution_plan(&install_plan, true);
-    let execution_report = execute_execution_plan(&execution_plan);
+    let execution_report = execute_execution_plan_with_progress(&execution_plan, progress_callback);
 
     transaction_result_from_execution_report(execution_report)
 }
@@ -1551,7 +1823,10 @@ fn current_kate_tool_status() -> Option<DevelopmentToolStatus> {
         .find(|tool| tool.name.eq_ignore_ascii_case("Kate"))
 }
 
-fn build_kate_real_uninstall_result() -> TransactionResult {
+fn build_kate_real_uninstall_result<F>(progress_callback: F) -> TransactionResult
+where
+    F: FnMut(CommandProgressEvent),
+{
     if is_container_runtime() {
         append_log_event(
             "runtime_action_blocked",
@@ -1589,7 +1864,7 @@ fn build_kate_real_uninstall_result() -> TransactionResult {
         ),
     );
 
-    let execution_report = execute_execution_plan(&execution_plan);
+    let execution_report = execute_execution_plan_with_progress(&execution_plan, progress_callback);
     transaction_result_from_execution_report(execution_report)
 }
 
@@ -1711,6 +1986,144 @@ mod tests {
     }
 
     #[test]
+    fn development_page_uses_pack_title_without_introductory_subtitle() {
+        let slint_source = include_str!("../ui/pages/DevelopmentPage.slint");
+
+        assert!(slint_source.contains("text: \"Development Pack\""));
+        assert!(slint_source.contains("font-size: 28px;"));
+        assert!(!slint_source.contains("text: \"Development\";"));
+        assert!(
+            !slint_source
+                .contains("Select development applications and install them from this page.")
+        );
+    }
+
+    #[test]
+    fn development_page_uses_compact_wide_application_section() {
+        let slint_source = include_str!("../ui/pages/DevelopmentPage.slint");
+
+        assert!(slint_source.contains("x: 28px;"));
+        assert!(slint_source.contains("y: 86px;"));
+        assert!(slint_source.contains("width: parent.width - 56px;"));
+        assert!(slint_source.contains("x: 12px;"));
+        assert!(slint_source.contains("width: parent.width - 24px;"));
+        assert!(!slint_source.contains("width: parent.width - 112px;"));
+        assert!(!slint_source.contains("width: parent.width - 48px;"));
+    }
+
+    #[test]
+    fn pack_placeholder_titles_use_compact_header_sizing() {
+        let slint_source = include_str!("../ui/pages/PlaceholderPage.slint");
+
+        assert!(slint_source.contains("font-size: 28px;"));
+        assert!(!slint_source.contains("font-size: 42px;"));
+    }
+
+    #[test]
+    fn placeholder_pack_pages_use_pack_title_pattern_without_subtitles() {
+        let slint_source = include_str!("../ui/app.slint");
+
+        for title in [
+            "Gaming Pack",
+            "Productivity Pack",
+            "Cloud & Sync Pack",
+            "Forge Ecosystem Pack",
+        ] {
+            assert!(slint_source.contains(&format!("title: \"{title}\"")));
+        }
+
+        assert!(!slint_source.contains("title: \"Gaming\";"));
+        assert!(!slint_source.contains("title: \"Productivity\";"));
+        assert!(!slint_source.contains("title: \"Cloud & Sync\";"));
+        assert!(!slint_source.contains("title: \"Forge Ecosystem\";"));
+        assert_eq!(slint_source.matches("show-subtitle: false").count(), 4);
+    }
+
+    #[test]
+    fn pack_page_summary_header_is_not_rendered_between_title_and_cards() {
+        let slint_source = include_str!("../ui/pages/DevelopmentPage.slint");
+
+        assert!(!slint_source.contains("Development tools available"));
+        assert!(!slint_source.contains("text: root.dev-summary-text"));
+        assert!(!slint_source.contains("color: #d8d8d8"));
+    }
+
+    #[test]
+    fn development_page_uses_short_kate_description() {
+        let slint_source = include_str!("../ui/pages/DevelopmentPage.slint");
+        let manifest_source = include_str!("../../../manifests/applications.yaml");
+
+        assert!(
+            slint_source.contains("description: \"Advanced KDE text editor for development\";")
+        );
+        assert!(manifest_source.contains("description: Advanced KDE text editor for development"));
+        assert!(
+            !slint_source.contains(
+                "Advanced KDE text editor for development notes, scripts, configuration files, and source editing."
+            )
+        );
+        assert!(
+            !manifest_source.contains(
+                "Advanced KDE text editor for development notes, scripts, configuration files, and source editing."
+            )
+        );
+    }
+
+    #[test]
+    fn default_source_labels_are_shortened_for_cards() {
+        assert_eq!(
+            InstallSource::NotInstalled.ui_metadata(),
+            "Host application"
+        );
+        assert_eq!(
+            InstallSource::HostOstreeLayered.ui_metadata(),
+            "Host application"
+        );
+        assert_eq!(
+            InstallSource::HostBaseImage.ui_metadata(),
+            "Host application"
+        );
+        assert_eq!(
+            InstallSource::FlatpakSystem.ui_metadata(),
+            "Flatpak application"
+        );
+        assert_eq!(
+            InstallSource::FlatpakUser.ui_metadata(),
+            "Flatpak application"
+        );
+
+        let slint_source = include_str!("../ui/app.slint");
+        assert!(slint_source.contains("dev-item-metadata: \"Host application\""));
+        assert!(!slint_source.contains("OS-owned package"));
+        assert!(!slint_source.contains("Development Pack validation item"));
+    }
+
+    #[test]
+    fn pack_item_card_uses_compact_icon_and_card_sizing() {
+        let slint_source = include_str!("../ui/components/PackItemCard.slint");
+
+        assert!(slint_source.contains("height: 112px;"));
+        assert!(slint_source.contains("width: 48px;"));
+        assert!(slint_source.contains("height: 48px;"));
+        assert!(slint_source.contains("font-size: 20px;"));
+        assert!(!slint_source.contains("height: 148px;"));
+        assert!(!slint_source.contains("width: 64px;"));
+    }
+
+    #[test]
+    fn install_selected_control_remains_present_and_compact() {
+        let slint_source = include_str!("../ui/pages/DevelopmentPage.slint");
+
+        assert!(slint_source.contains("callback install-selected;"));
+        assert!(slint_source.contains("label: \"Install Selected\""));
+        assert!(slint_source.contains("root.install-selected();"));
+        assert!(slint_source.contains("width: 220px;"));
+        assert!(slint_source.contains("height: 48px;"));
+        assert!(slint_source.contains("icon-size: 22px;"));
+        assert!(slint_source.contains("label-size: 16px;"));
+    }
+
+    #[test]
     fn pending_ostree_state_is_non_actionable() {
         let status = kate_status(InstallSource::PendingOstreeInstall);
         let presentation = build_development_item_presentation(Some(&status), true);
@@ -1777,21 +2190,96 @@ mod tests {
         assert!(!presentation.removable);
         assert!(!presentation.selected);
         assert_eq!(presentation.state, ITEM_STATE_UNKNOWN);
-        assert_eq!(presentation.status_text, "Unavailable");
+        assert_eq!(presentation.status_text, "Source unknown");
+        assert!(presentation.metadata.contains("needs attention"));
     }
 
     #[test]
-    fn removability_follows_detected_install_source() {
+    fn removability_requires_confirmed_layered_kate_for_development_card() {
         let removable_status = kate_status(InstallSource::FlatpakUser);
-        let removable = build_development_item_presentation(Some(&removable_status), false);
-        assert!(removable.installed);
-        assert!(removable.removable);
+        let flatpak = build_development_item_presentation(Some(&removable_status), false);
+        assert!(flatpak.installed);
+        assert!(!flatpak.removable);
+        assert_eq!(flatpak.state, ITEM_STATE_UNKNOWN);
+        assert_eq!(flatpak.status_text, "Source unknown");
 
-        let managed_status = kate_status(InstallSource::HostBaseImage);
-        let managed = build_development_item_presentation(Some(&managed_status), false);
-        assert!(managed.installed);
-        assert!(!managed.removable);
-        assert_eq!(managed.status_text, "Managed");
+        let layered_status = kate_status(InstallSource::HostOstreeLayered);
+        let layered = build_development_item_presentation(Some(&layered_status), false);
+        assert!(layered.installed);
+        assert!(layered.removable);
+        assert_eq!(layered.status_text, "Installed");
+    }
+
+    #[test]
+    fn installed_removable_card_state_shows_trash_and_hides_checkbox() {
+        let status = kate_status(InstallSource::HostOstreeLayered);
+        let presentation = build_development_item_presentation(Some(&status), true);
+
+        assert!(presentation.installed);
+        assert!(presentation.removable);
+        assert!(!presentation.selected);
+        assert_eq!(presentation.state, ITEM_STATE_INSTALLED);
+        assert_eq!(presentation.status_text, "Installed");
+
+        let slint_source = include_str!("../ui/components/PackItemCard.slint");
+        assert!(slint_source.contains("if !root.installed: Rectangle"));
+        assert!(slint_source.contains("root.installed && root.removable"));
+    }
+
+    #[test]
+    fn active_kate_without_layered_evidence_hides_checkbox_and_trash() {
+        let status = kate_status(InstallSource::Unknown);
+        let presentation = build_development_item_presentation(Some(&status), true);
+
+        assert!(presentation.installed);
+        assert!(!presentation.removable);
+        assert!(!presentation.selected);
+        assert_eq!(presentation.state, ITEM_STATE_UNKNOWN);
+
+        let slint_source = include_str!("../ui/components/PackItemCard.slint");
+        assert!(slint_source.contains("if !root.installed: Rectangle"));
+        assert!(slint_source.contains("root.installed && root.removable"));
+    }
+
+    #[test]
+    fn active_kate_without_layered_evidence_does_not_show_managed_as_normal_state() {
+        let status = kate_status(InstallSource::Unknown);
+        let presentation = build_development_item_presentation(Some(&status), true);
+
+        assert_ne!(presentation.status_text, "Managed");
+        assert_eq!(presentation.status_text, "Source unknown");
+    }
+
+    #[test]
+    fn installed_non_removable_card_state_uses_problem_wording() {
+        let status = kate_status(InstallSource::HostBaseImage);
+        let presentation = build_development_item_presentation(Some(&status), true);
+
+        assert!(presentation.installed);
+        assert!(!presentation.removable);
+        assert!(!presentation.selected);
+        assert_eq!(presentation.state, ITEM_STATE_UNKNOWN);
+        assert_eq!(presentation.status_text, "Source unknown");
+
+        let slint_source = include_str!("../ui/components/PackItemCard.slint");
+        assert!(slint_source.contains("if !root.installed: Rectangle"));
+        assert!(slint_source.contains("root.installed && !root.removable"));
+    }
+
+    #[test]
+    fn not_installed_card_state_shows_checkbox_and_hides_trash() {
+        let status = kate_status(InstallSource::NotInstalled);
+        let presentation = build_development_item_presentation(Some(&status), false);
+
+        assert!(!presentation.installed);
+        assert!(!presentation.removable);
+        assert!(!presentation.selected);
+        assert_eq!(presentation.state, ITEM_STATE_AVAILABLE);
+        assert_eq!(presentation.status_text, "Available");
+
+        let slint_source = include_str!("../ui/components/PackItemCard.slint");
+        assert!(slint_source.contains("if !root.installed: Rectangle"));
+        assert!(slint_source.contains("root.installed && root.removable"));
     }
 
     #[test]
@@ -1820,5 +2308,138 @@ mod tests {
         assert!(kate_uninstall_command(InstallSource::PendingOstreeRemoval).is_none());
         assert!(kate_uninstall_command(InstallSource::HostBaseImage).is_none());
         assert!(kate_uninstall_command(InstallSource::Unknown).is_none());
+    }
+
+    #[test]
+    fn task_progress_detail_normalizes_multiline_rpm_ostree_output() {
+        let detail = "Starting rpm-ostree transaction\nChecking out tree\nWriting objects";
+
+        assert_eq!(
+            normalize_task_progress_detail(detail),
+            "Starting rpm-ostree"
+        );
+    }
+
+    #[test]
+    fn task_progress_detail_normalizes_finalizing_output() {
+        let detail = "Finalizing deployment\nRunning cleanup hooks";
+
+        assert_eq!(normalize_task_progress_detail(detail), "Finalizing");
+    }
+
+    #[test]
+    fn task_progress_detail_normalizes_reboot_required_output() {
+        let detail = "Transaction complete\nReboot required to apply deployment";
+
+        assert_eq!(normalize_task_progress_detail(detail), "Reboot required");
+    }
+
+    #[test]
+    fn task_progress_detail_keeps_failures_failure_oriented() {
+        let detail = "rpm-ostree transaction failed\nReboot required text should not win";
+
+        assert_eq!(normalize_task_progress_detail(detail), "Failed");
+    }
+
+    #[test]
+    fn task_progress_detail_uses_safe_fallback_for_unknown_verbose_output() {
+        let detail = "Receiving metadata objects for layered deployment branch";
+        let normalized = concise_task_progress_detail(detail);
+
+        assert_eq!(normalized, "Downloading");
+        assert!(!normalized.contains('\n'));
+        assert!(!normalized.contains("metadata objects"));
+    }
+
+    #[test]
+    fn task_progress_detail_never_returns_raw_multiline_text() {
+        let normalized = concise_task_progress_detail("unrecognized\nverbose\nstatus");
+
+        assert_eq!(normalized, "Working");
+        assert!(!normalized.contains('\n'));
+    }
+
+    #[test]
+    fn sidebar_message_truncation_respects_char_boundaries() {
+        let truncated = truncate_sidebar_message(
+            "Preparing installation status that is too long for the sidebar",
+        );
+
+        assert_eq!(truncated.chars().count(), TASK_PROGRESS_DETAIL_MAX_CHARS);
+        assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn live_command_progress_stays_below_terminal_completion() {
+        assert_eq!(bounded_live_progress_percent(100, 20), 98);
+        assert_eq!(bounded_live_progress_percent(99, 97), 98);
+        assert_eq!(bounded_live_progress_percent(40, 55), 55);
+    }
+
+    #[test]
+    fn workflow_progress_status_keeps_ui_status_concise() {
+        let status = workflow_progress_status(WorkflowKind::Install, "Writing deployment");
+
+        assert_eq!(status, "Writing deployment");
+        assert!(!status.contains('\n'));
+    }
+
+    #[test]
+    fn workflow_progress_status_uses_safe_fallback_for_unknown_text() {
+        let status = workflow_progress_status(WorkflowKind::Install, "verbose raw detail");
+
+        assert_eq!(status, "Working");
+    }
+
+    #[test]
+    fn item_status_for_progress_is_direction_aware() {
+        assert_eq!(
+            item_status_for_progress(WorkflowKind::Install, "Applying changes"),
+            "Installing…"
+        );
+        assert_eq!(
+            item_status_for_progress(WorkflowKind::Uninstall, "Applying changes"),
+            "Removing…"
+        );
+        assert_eq!(
+            item_status_for_progress(WorkflowKind::Uninstall, "Reboot required"),
+            "Waiting for reboot…"
+        );
+    }
+
+    #[test]
+    fn gui_refresh_result_log_fields_are_structured() {
+        let detail = format_log_fields(
+            "refresh_result",
+            &[
+                ("workflow", "Development Pack".to_string()),
+                ("package", "kate".to_string()),
+                ("installed", "true".to_string()),
+                ("source", "HostOstreeLayered".to_string()),
+            ],
+        );
+
+        assert!(detail.contains("event=\"refresh_result\""));
+        assert!(detail.contains("workflow=\"Development Pack\""));
+        assert!(detail.contains("package=\"kate\""));
+        assert!(detail.contains("source=\"HostOstreeLayered\""));
+    }
+
+    #[test]
+    fn gui_final_ui_state_log_fields_are_structured_and_escaped() {
+        let detail = format_log_fields(
+            "final_ui_state",
+            &[
+                ("workflow", "install".to_string()),
+                ("package", "kate".to_string()),
+                ("status", "Pending \"reboot\"".to_string()),
+                ("pending", "true".to_string()),
+            ],
+        );
+
+        assert!(detail.contains("event=\"final_ui_state\""));
+        assert!(detail.contains("workflow=\"install\""));
+        assert!(detail.contains("status=\"Pending \\\"reboot\\\"\""));
+        assert!(detail.contains("pending=\"true\""));
     }
 }

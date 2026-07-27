@@ -1,26 +1,30 @@
 ---
-modified: 2026-07-14
+modified: 2026-07-27
 type: project-status
 project: AshGrove Welcome
 legacy_project_name: Forge Welcome
-status: active
-last_completed_milestone: v0.6.1 — Inline Pack Install Workflow
-active_roadmap_milestone: v0.6.2 — Task Progress and Logging
-current_implementation_revision: Not created
-final_accepted_revision: v0.6.1.12
+status: milestone-complete
+last_completed_milestone: v0.6.2 — Task Progress and Logging
+final_accepted_revision: v0.6.2.8
+base_commit: ce8ce6779beddef8780dd2e6a8039d6fa4c0807b
+implementation_commit_state: Not committed
+implementation_push_state: Not pushed
 workflow_state: Milestone complete; Git commit and push pending
+next_workflow_action: COMMIT / PUSH
 ---
 
 # Project Status
 
 ## Version State
 
-- Last completed milestone: `v0.6.1 — Inline Pack Install Workflow`
-- Active roadmap milestone: `v0.6.2 — Task Progress and Logging`
-- Current implementation revision: `Not created`
-- Final accepted revision: `v0.6.1.12`
+- Last completed milestone: `v0.6.2 — Task Progress and Logging`
+- Final accepted revision: `v0.6.2.8`
+- Baseline commit: `ce8ce6779beddef8780dd2e6a8039d6fa4c0807b`
 - Current workflow state: `Milestone complete; Git commit and push pending`
 - Next legal workflow action: `COMMIT / PUSH`
+- Commit/push state: `Not committed; not pushed`
+- Next planned milestone: `v0.6.3 — Multi-Item Pack Page Preparation`
+- `v0.6.3` status: `Not started`
 
 ## Project Dashboard
 
@@ -29,118 +33,82 @@ workflow_state: Milestone complete; Git commit and push pending
 | Project | AshGrove Welcome |
 | Legacy/internal source name | Forge Welcome / `forge-welcome-*` crate names retained |
 | Repository | `https://github.com/AshGroveLabs/ashgrove-welcome` |
-| Repository visibility | Public |
-| Last completed roadmap milestone | `v0.6.1 — Inline Pack Install Workflow` |
-| Initial implementation revision | `v0.6.1.0` |
-| Final accepted revision | `v0.6.1.12` |
-| Corrective revision chain | `v0.6.1.9` through `v0.6.1.12` |
-| Manual host GUI validation | Passed: full install/remove/reboot lifecycle |
-| Code-review result | APPROVED WITH NON-BLOCKING NOTES |
-| Handoff-review result | APPROVED WITH NON-BLOCKING DEFERRALS |
-| Current active roadmap milestone | `v0.6.2 — Task Progress and Logging` |
-| Current implementation revision | `Not created` |
-| Git commit state | Pending |
-| Git push state | Pending |
-| Last updated | 2026-07-14 |
+| Last completed roadmap milestone | `v0.6.2 — Task Progress and Logging` |
+| Final accepted revision | `v0.6.2.8` |
+| BUILD AND VALIDATE | Passed |
+| CODE REVIEW result | Approved `v0.6.2.8` for MILESTONE HANDOFF REVIEW |
+| Handoff review result | Accepted by user |
+| Git commit state | Not committed |
+| Git push state | Not pushed |
+| Next workflow action | COMMIT / PUSH |
+| Last updated | 2026-07-27 |
 
 ## Executive Summary
 
-`v0.6.1 — Inline Pack Install Workflow` is complete.
+`v0.6.2 — Task Progress and Logging` is complete at final accepted revision `v0.6.2.8`.
 
-The milestone delivered a direct inline install and uninstall workflow for the Development Pack Kate validation item. The final accepted implementation revision is `v0.6.1.12`, approved by MILESTONE HANDOFF REVIEW. CODE REVIEW returned **APPROVED WITH NON-BLOCKING NOTES**, and the corrected CODE CHANGE WALKTHROUGH was accepted.
+The milestone improved Development Pack task progress, captured rpm-ostree stdout/stderr, added progress parsing and clamping, preserved concise UI status text, corrected Kate source classification, preserved red trash uninstall behavior for confirmed removable sources, compacted the pack UI, and added persistent structured runtime logging.
 
-The validated behavior includes:
+The milestone is complete from the implementation/review/handoff workflow perspective. Git commit and push remain pending. Do not start `v0.6.3` until commit/push and refreshed project status are complete.
 
-- Kate installs through `Install Selected`.
-- Kate uninstalls through the per-item red trash action.
-- rpm-ostree install and uninstall paths work.
-- Checkbox is enabled when Kate is not installed.
-- Checkbox is disabled after Kate is installed.
-- Red trash action displays after Kate is installed.
-- Red trash action removes Kate only.
-- The GUI remains responsive during host-side package actions.
-- Container runtime guard prevents accidental package actions from `forge-dev`.
+## Validation Summary
 
-## Completed Milestone
+Automated validation passed:
 
-### Roadmap Milestone
+- `cargo fmt --all --check`
+- `cargo check`
+- `cargo clippy`
+- `cargo test`
+- `cargo build -p forge-welcome-gui`
+- `git diff --check`
 
-- Version: `v0.6.1`
-- Name: Inline Pack Install Workflow
-- Status: Complete
-- Initial implementation revision: `v0.6.1.0`
-- Final accepted revision: `v0.6.1.12`
-- Manual validation: Full host GUI install/remove/reboot lifecycle passed
-- Closed findings: `F-001` through `F-004`
-- Accepted reboot-required behavior: the Kate card is replaced by the non-actionable **System Update Scheduled** card for scheduled rpm-ostree install/removal states
+Latest reported test counts:
 
-### Completed Scope
+- `forge-welcome-core`: 111 passed
+- `forge-welcome-gui`: 39 passed
 
-- Replaced the temporary legacy dialog path for the main Development Pack workflow.
-- Implemented direct install from the page-level `Install Selected` button.
-- Added item-card progress and state updates.
-- Updated sidebar `Tasks (%)` during workflow.
-- Preserved Kate-only validation scope.
-- Preserved direct host package install/uninstall behavior.
-- Added host/container runtime guard behavior.
-- Corrected Kate installed-state detection for active, pending reboot, and not-installed states.
-- Added source-aware red trash behavior.
-- Preserved no real Gaming Pack execution.
-- Preserved no arbitrary shell execution.
+Manual host validation passed:
 
-## Active Milestone
+- Grove Welcome launches from host.
+- Development Pack opens.
+- Compact UI remains intact.
+- Kate detection behavior remains intact.
+- Kate install/remove workflow validated.
+- Red trash appears for confirmed layered/removable Kate.
+- Checkbox is hidden when Kate is installed.
+- Progress remains below `100%` until completion/refresh.
+- Final state reaches reboot required when expected.
+- Runtime log file contains `progress_transition`, `command_output_line`, `command_result`, `refresh_result`, and `final_ui_state`.
 
-### v0.6.2 — Task Progress and Logging
+## Process Note
 
-**Status:** Planned / next
-
-Objective:
-
-Improve task progress, logging, and workflow diagnostics now that the inline install/uninstall path is functional.
+The `v0.6.2` handoff was accepted by the user despite lacking full code-symbol walkthrough detail. Future code milestone handoffs must include code-symbol-level walkthroughs.
 
 ## Current Technical Health
 
 | Category | Status | Notes |
 |---|---|---|
-| Architecture | Healthy | v0.6.1 inline workflow is validated. |
-| Code quality | Acceptable | `main.rs` grew substantially; extraction should be considered later. |
-| Build health | Accepted evidence chain | Revision-specific automated-validation documentation remains a non-blocking deferral. |
-| Test health | Needs attention | Add regression tests for detection states and workflow gating when practical. |
-| Documentation | Updated in this closeout | Commit and push pending. |
-| Safety | Healthy | Container action guard and execution boundary rules preserved. |
-| Technical debt | Moderate | Workflow orchestration should eventually move out of `main.rs`. |
+| Architecture | Stable | Existing execution boundary, host/container guard, and package detection behavior are preserved. |
+| Code quality | Accepted | CODE REVIEW approved `v0.6.2.8` for handoff review. |
+| Build health | Passed | BUILD AND VALIDATE passed. |
+| Test health | Passed | Latest reported counts: core 111 passed, GUI 39 passed. |
+| Documentation | Updated | Completion docs now record `v0.6.2` as complete and commit/push pending. |
+| Safety | Preserved | No commit, push, package install/uninstall, or real Gaming Pack execution in this completion documentation pass. |
 
-## Risks
+## Non-Blocking Deferrals
 
-| Risk | Mitigation |
-|---|---|
-| rpm-ostree behavior differs across host states | v0.6.2 should strengthen diagnostic logging and result classification. |
-| Workflow code concentrated in GUI `main.rs` | Plan refactor only after v0.6.2 logging/progress stabilizes. |
-| Host/container confusion during validation | Keep host preflight command in README and validation checklist. |
-| Missing regression tests for install-source states | Add tests around detection and source mapping when code shape allows. |
+- rpm-ostree progress parsing may still be line-fragment fragile.
+- Workflow orchestration remains concentrated in GUI `main.rs`.
+- Typed rpm-ostree structs are deferred.
+- Full rpm-ostree D-Bus transaction client is deferred.
+- Installation Page / Multi-Pack Installation Queue is deferred.
 
-## GitHub Status
-
-- Repository: `https://github.com/AshGroveLabs/ashgrove-welcome`
-- Commit state: Pending
-- Push state: Pending
-
-Recommended milestone commit:
-
-```bash
-git commit -m "Milestone v0.6.1: Inline pack install workflow"
-```
-
-## Next Development Session
-
-Before continuing to `v0.6.2`, commit and push the completed `v0.6.1` source and documentation changes.
-
-Do not start `v0.6.2` until commit/push and source refresh are complete.
-
-Next planned command loop:
+## Next Command Loop
 
 ```text
-PROJECT STATUS
+COMMIT / PUSH
       ↓
-IMPLEMENT PROJECT MILESTONE v0.6.2
+PROJECT STATUS refresh
+      ↓
+IMPLEMENT PROJECT MILESTONE v0.6.3 only after approval
 ```

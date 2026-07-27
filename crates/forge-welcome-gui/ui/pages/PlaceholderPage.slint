@@ -1,19 +1,20 @@
 export component PlaceholderPage inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
+    in property <bool> show-subtitle: true;
 
     background: #121212;
 
     Text {
         text: root.title;
         x: 56px;
-        y: 56px;
+        y: 42px;
         color: #ffffff;
-        font-size: 42px;
+        font-size: 28px;
         font-weight: 800;
     }
 
-    Text {
+    if root.show-subtitle: Text {
         text: root.subtitle;
         x: 56px;
         y: 116px;
@@ -23,9 +24,9 @@ export component PlaceholderPage inherits Rectangle {
 
     Rectangle {
         x: 56px;
-        y: 180px;
+        y: root.show-subtitle ? 180px : 130px;
         width: parent.width - 112px;
-        height: 280px;
+        height: root.show-subtitle ? 280px : 330px;
         border-radius: 14px;
         background: #181818cc;
         border-width: 1px;
