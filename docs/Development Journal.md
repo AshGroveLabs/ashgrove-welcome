@@ -15,7 +15,7 @@ The milestone improved visible task progress, rpm-ostree stdout/stderr capture, 
 
 Process note: the user accepted the `v0.6.2` handoff despite lacking full code-symbol walkthrough detail. Future code milestone handoff reviews must include code-symbol-level walkthroughs.
 
-The next legal workflow action is COMMIT / PUSH. `v0.6.3 — Multi-Item Pack Page Preparation` is the next planned milestone but has not started.
+The `v0.6.2` milestone implementation was committed and pushed, and the post-v0.6.2 documentation refresh was also committed and pushed. After this documentation consistency correction, the next legal workflow action is PROJECT STATUS. `v0.6.3 — Multi-Item Pack Page Preparation` is the next planned milestone but has not started.
 
 ## 2026-07-20 — v0.6.1.15 Application Catalog Foundation Complete
 

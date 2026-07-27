@@ -1,10 +1,13 @@
 ---
-modified: 2026-07-14
+modified: 2026-07-27
 type: master-knowledge-base
 project: AshGrove Welcome
 status: active
-last_completed_milestone: v0.6.1 — Inline Pack Install Workflow
-active_roadmap_milestone: v0.6.2 — Task Progress and Logging
+last_completed_milestone: v0.6.2 — Task Progress and Logging
+final_accepted_revision: v0.6.2.8
+next_planned_milestone: v0.6.3 — Multi-Item Pack Page Preparation
+v0.6.3_status: Planned / not started
+current_workflow_state: post-v0.6.2 documentation consistency correction pending PROJECT STATUS
 ---
 
 # Master Knowledge Base
@@ -17,9 +20,11 @@ active_roadmap_milestone: v0.6.2 — Task Progress and Logging
 | Legacy source name | Forge Welcome |
 | Internal crate names | `forge-welcome-*` |
 | Repository | `https://github.com/AshGroveLabs/ashgrove-welcome` |
-| Last completed milestone | `v0.6.1 — Inline Pack Install Workflow` |
-| Final accepted revision | `v0.6.1.12` |
-| Active roadmap milestone | `v0.6.2 — Task Progress and Logging` |
+| Last completed milestone | `v0.6.2 — Task Progress and Logging` |
+| Final accepted revision | `v0.6.2.8` |
+| Next planned milestone | `v0.6.3 — Multi-Item Pack Page Preparation` |
+| v0.6.3 status | Planned / not started |
+| Current workflow state | Post-v0.6.2 documentation consistency correction pending PROJECT STATUS |
 
 ## Versioning Knowledge
 
@@ -28,6 +33,7 @@ Roadmap milestones use three-part versions:
 ```text
 v0.6.1
 v0.6.2
+v0.6.3
 ```
 
 Implementation revisions use four-part versions:
@@ -36,6 +42,7 @@ Implementation revisions use four-part versions:
 v0.6.1.0
 v0.6.1.1
 v0.6.1.12
+v0.6.2.8
 ```
 
 Rules:
@@ -46,6 +53,10 @@ Rules:
 - Code review uses the latest revision only.
 - Artifacts never overwrite earlier revisions.
 - Validation artifact filenames use lowercase names, underscores, and full four-part revisions.
+
+## Workflow Process Notes
+
+Future code milestone prompts must include a Documentation Sync Ledger. IMPLEMENT PROJECT and IMPLEMENT FIX must state whether Project Status, Current Sprint, Milestones, Roadmap, CHANGELOG, Development Journal, Architecture, Decisions, Master Knowledge Base, and milestone reports were updated, not needed, or deferred with reason. BUILD AND VALIDATE and CODE REVIEW must include a documentation consistency check. MILESTONE HANDOFF REVIEW must include a code-symbol-level walkthrough.
 
 ## Completed v0.6.1 Knowledge
 
@@ -121,13 +132,19 @@ Build validation may run in forge-dev.
 GUI package detection and install/uninstall validation must run on host.
 ```
 
-## Active Next Focus
+## Completed v0.6.2 Knowledge
 
 `v0.6.2 — Task Progress and Logging`
 
-Goals:
+Completed goals:
 
 - Improve sidebar task progress state.
 - Improve item-level workflow text.
 - Improve persistent logging.
 - Improve failure and recovery diagnostics.
+
+## Active Next Focus
+
+`v0.6.3 — Multi-Item Pack Page Preparation`
+
+Status: Planned / not started.
